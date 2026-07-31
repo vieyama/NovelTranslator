@@ -1,0 +1,76 @@
+// Data model for Novel Translator — see SPEC.md §2 and GLOSSARY.md.
+//
+// Prisma 7: the datasource URL lives in prisma.config.ts (which loads
+// .env.local), not here. Re-run `npx prisma generate` after editing this file.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Book {
+  id              String   @id @default(cuid())
+  title           String
+  author          String?
+  sourceFormat    String // "txt" | "epub" | "pdf"
+  totalParagraphs Int
+  createdAt       DateTime @default(now())
+
+  paragraphs    Paragraph[]
+  progress      ReadingProgress?
+  glossaryTerms GlossaryTerm[]
+}
+
+model Paragraph {
+  id     String @id @default(cuid())
+  bookId String
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  // Absolute order within the book, starting at 0. Single source of truth for
+  // ordering and progress — never infer position by text matching.
+  orderIndex   Int
+  chapterIndex Int?
+  originalText String
+
+  // Null = not yet translated, so untranslated paragraphs are a simple query.
+  translatedText String?
+  charCount      Int
+  translatedAt   DateTime?
+
+  @@unique([bookId, orderIndex])
+  @@index([bookId, orderIndex])
+}
+
+model ReadingProgress {
+  bookId String @id
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  // Kept separate: translation may run ahead of reading, and the user may
+  // re-read earlier parts. -1 means "nothing yet".
+  lastTranslatedIndex Int      @default(-1)
+  lastReadIndex       Int      @default(-1)
+  updatedAt           DateTime @updatedAt
+}
+
+// Per-book terminology, injected into every translation prompt so names and
+// invented terms stay consistent across batches (GLOSSARY.md).
+model GlossaryTerm {
+  id     String @id @default(cuid())
+  bookId String
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  // Original English term.
+  term        String
+  // Indonesian form, or null = "keep unchanged".
+  translation String?
+  // "character" | "place" | "term" | "title" | "skill" | "item" | "honorific"
+  category    String?
+  note        String?
+
+  @@unique([bookId, term])
+  @@index([bookId])
+}
