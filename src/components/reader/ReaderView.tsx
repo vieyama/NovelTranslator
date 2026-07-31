@@ -39,15 +39,20 @@ export function ReaderView({ page }: { page: ReaderPage }) {
     getViewModeServerSnapshot,
   );
 
-  async function markRead(orderIndex: number) {
-    setMarkingIndex(orderIndex);
+  /**
+   * `markingKey` is the paragraph whose button was clicked — kept separate
+   * from `newLastReadIndex` (the value actually sent) so the busy state stays
+   * on the right paragraph for `markUnread`, which sends `orderIndex - 1`.
+   */
+  async function updateLastReadIndex(newLastReadIndex: number, markingKey: number) {
+    setMarkingIndex(markingKey);
     setMarkError(null);
 
     try {
       const response = await fetch(`/api/books/${page.book.id}/progress`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lastReadIndex: orderIndex }),
+        body: JSON.stringify({ lastReadIndex: newLastReadIndex }),
       });
 
       if (!response.ok) {
@@ -62,6 +67,21 @@ export function ReaderView({ page }: { page: ReaderPage }) {
     } finally {
       setMarkingIndex(null);
     }
+  }
+
+  function markRead(orderIndex: number) {
+    return updateLastReadIndex(orderIndex, orderIndex);
+  }
+
+  /**
+   * Reverts `orderIndex` (and everything after it) to unread — `lastReadIndex`
+   * is a single watermark (SPEC.md §3.3), so "unread from here" is really
+   * "move the watermark to just before here", the same mechanism as marking
+   * read, just backward (already anticipated by `setLastReadIndex` allowing
+   * the value to decrease — see `reader.ts`).
+   */
+  function markUnread(orderIndex: number) {
+    return updateLastReadIndex(orderIndex - 1, orderIndex);
   }
 
   const { book, progress, paragraphs, pagination } = page;
@@ -164,6 +184,7 @@ export function ReaderView({ page }: { page: ReaderPage }) {
                 isRead={paragraph.orderIndex <= progress.lastReadIndex}
                 isMarking={markingIndex === paragraph.orderIndex}
                 onMarkRead={markRead}
+                onMarkUnread={markUnread}
               />
             </div>
           ))}

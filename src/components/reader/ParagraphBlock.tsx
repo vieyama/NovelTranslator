@@ -19,6 +19,7 @@ export function ParagraphBlock({
   isRead,
   isMarking,
   onMarkRead,
+  onMarkUnread,
 }: {
   bookId: string;
   paragraph: ReaderParagraph;
@@ -26,6 +27,7 @@ export function ParagraphBlock({
   isRead: boolean;
   isMarking: boolean;
   onMarkRead: (orderIndex: number) => void;
+  onMarkUnread: (orderIndex: number) => void;
 }) {
   const showOriginal = viewMode === "original" || viewMode === "side-by-side";
   const showTranslated = viewMode === "translated" || viewMode === "side-by-side";
@@ -81,7 +83,17 @@ export function ParagraphBlock({
         </span>
 
         {isRead ? (
-          <span className="text-emerald-700 dark:text-emerald-400">Sudah dibaca</span>
+          <>
+            <span className="text-emerald-700 dark:text-emerald-400">Sudah dibaca</span>
+            <button
+              type="button"
+              onClick={() => onMarkUnread(paragraph.orderIndex)}
+              disabled={isMarking}
+              className="rounded cursor-pointer text-zinc-400 opacity-0 transition-opacity hover:text-amber-700 focus:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 group-hover:opacity-100 disabled:cursor-wait disabled:opacity-70 dark:hover:text-amber-400"
+            >
+              {isMarking ? "Menyimpan…" : "Tandai belum dibaca"}
+            </button>
+          </>
         ) : (
           <button
             type="button"
