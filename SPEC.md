@@ -133,6 +133,14 @@ right before that gap (or the last paragraph, if there is no gap). This means:
   logic that marking read is "up to here", not "just this one". The action
   reuses the same `PATCH /api/books/:id/progress` endpoint, just with
   `lastReadIndex` set to `orderIndex - 1` instead of `orderIndex`.
+- The header has two "jump to my position" shortcuts: **Ke posisi baca
+  terakhir** (→ the page containing `lastReadIndex + 1`) and **Ke batas
+  terjemahan terakhir** (→ the page containing `lastTranslatedIndex + 1`).
+  Plain `?page=N` navigation via `pageForIndex` — no fetch, no client state.
+  Since browsing via numeric pagination can leave the reader far from either
+  watermark, these are the fast way back. Whichever one matches the page
+  already being viewed renders as a real disabled `<button>` rather than a
+  no-op link, the same convention as `Pagination.tsx`'s disabled ends.
 - If the paragraph the user wants to read hasn't been translated yet → a
   "Translate more" button triggers the next batch directly, without navigating away.
 - Every untranslated paragraph also has its own "Terjemahkan dari sini" control

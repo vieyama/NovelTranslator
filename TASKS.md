@@ -365,6 +365,24 @@ Notes:
         `lastReadIndex=4`, reverting paragraph #2 → `lastReadIndex` becomes 1
         and the read/unread button counts flip from 5/1 to 2/4 exactly as
         expected.
+- [x] "Jump to my position" shortcuts in the reader header (ad hoc user
+      request, follow-up to the two above — browsing via numeric pagination
+      can land far from either watermark)
+      - Two `GoToPageButton`s (local to `ReaderView.tsx`, not extracted —
+        only used twice, no second use case yet): "Ke posisi baca terakhir"
+        → `pageForIndex(lastReadIndex + 1)`, "Ke batas terjemahan terakhir"
+        → `pageForIndex(lastTranslatedIndex + 1)`. Pure navigation
+        (`next/link`), no fetch — same URL-is-source-of-truth pattern as the
+        rest of pagination.
+      - Whichever target equals the page already being viewed renders as a
+        real disabled `<button>`, not a dead link — same rule `Pagination.tsx`
+        already follows for its First/Prev/Next/Last ends.
+      - Verified: 100-paragraph test book with `lastReadIndex=95` (page 4) and
+        `lastTranslatedIndex=10` (page 1), viewed from page 2 — both render as
+        links to the right page; viewing page 4 disables the read shortcut,
+        viewing page 1 disables the translate shortcut. Screenshot confirms
+        layout.
+      - SPEC.md §3.3 documents both shortcuts.
 
 ## Non-Negotiables (recheck before marking any phase done)
 
