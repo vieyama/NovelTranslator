@@ -1,9 +1,14 @@
+// Server-only: importing this from a Client Component would pull secrets
+// and/or native bindings into the browser bundle. Prisma.
+import "server-only";
+
 import { prisma } from "@/lib/db";
+import { EpubParseError, parse as parseEpub } from "@/lib/parser/epub";
 import { parse as parseTxt } from "@/lib/parser/txt";
 import type { ParsedParagraph } from "@/lib/parser/types";
 
 /** MVP supports .txt only; epub/pdf land in Phase 6 (TASKS.md). */
-const SUPPORTED_FORMATS = ["txt"] as const;
+const SUPPORTED_FORMATS = ["txt", "epub"] as const;
 type SupportedFormat = (typeof SUPPORTED_FORMATS)[number];
 
 /** Guard against accidentally uploading something enormous into SQLite. */
@@ -150,6 +155,16 @@ function parseByFormat(format: SupportedFormat, bytes: Uint8Array): ParsedParagr
   switch (format) {
     case "txt":
       return parseTxt(bytes);
+    case "epub":
+      try {
+        return parseEpub(bytes);
+      } catch (error) {
+        // A malformed EPUB is the user's file being wrong, not a server fault.
+        if (error instanceof EpubParseError) {
+          throw new BookImportError(error.message, 422);
+        }
+        throw error;
+      }
   }
 }
 
@@ -158,7 +173,7 @@ function detectFormat(fileName: string): SupportedFormat {
 
   if (!SUPPORTED_FORMATS.includes(extension as SupportedFormat)) {
     throw new BookImportError(
-      `Unsupported file type ".${extension}". The MVP accepts .txt only.`,
+      `Unsupported file type ".${extension}". Supported: ${SUPPORTED_FORMATS.map((f) => `.${f}`).join(", ")}.`,
       415,
     );
   }
