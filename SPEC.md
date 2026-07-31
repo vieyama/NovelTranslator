@@ -68,7 +68,14 @@ Design notes:
 - User uploads a file (`.txt`, `.epub`, or `.pdf`).
 - The parser splits it into paragraphs:
   - **txt**: split by double newline (`\n\n`), trim whitespace.
-  - **epub**: parse HTML per chapter, take `<p>` tags as paragraphs, strip tags.
+  - **epub** (built): unzip, read `META-INF/container.xml` → the OPF package,
+    then walk the OPF **spine** for reading order. Zip entry order is arbitrary
+    and would scramble the book, so it is never used. Each spine document
+    becomes one `chapterIndex`. Blocks taken as paragraphs are `<p>`,
+    `<h1>`–`<h6>` and `<blockquote>` — headings are included because chapter
+    titles are text the reader wants, a small widening of the original "`<p>`
+    tags only" rule. Documents using no block tags fall back to splitting on
+    `</div>`/`<br>`. Entities are decoded and whitespace collapsed.
   - **pdf**: extract text per page, then heuristic paragraph-splitting (blank
     lines / indentation), needs cleanup for header/footer/page-number noise.
 - Save all paragraphs to the DB with a sequential `orderIndex`.
@@ -76,10 +83,11 @@ Design notes:
 
 ### 3.2 Translate Batch
 - Endpoint: `POST /api/translate`
-- Input: `bookId`, `maxChars` (configurable default, e.g. 3000)
+- Input: `bookId`, `maxChars` (configurable default, e.g. 3000), `fromIndex` (optional)
 - Logic:
   1. Fetch paragraphs starting at `lastTranslatedIndex + 1` where
-     `translatedText IS NULL`.
+     `translatedText IS NULL` — or, if `fromIndex` was given, starting there
+     instead (see "Explicit start index" below).
   2. Group consecutive paragraphs up to `maxChars` without exceeding it (never
      split a paragraph mid-way).
   3. Send to the AI with a translation prompt (system prompt stored in
@@ -88,19 +96,143 @@ Design notes:
      to preserve a paragraph separator, e.g. `\n\n---\n\n`, so it can be split
      back reliably).
   5. Update `translatedText` for each paragraph + `translatedAt`.
-  6. Update `lastTranslatedIndex` to the last successfully translated index.
+  6. Recompute `lastTranslatedIndex` as "last index before the next
+     untranslated gap" (not simply "end of this batch" — see below).
 - Response: the newly translated paragraphs + the new index.
+
+**Explicit start index (`fromIndex`).** The reader isn't required to translate
+strictly in order. `fromIndex` starts the batch at that paragraph instead of
+`lastTranslatedIndex + 1`, so the reader can jump translation ahead to wherever
+they're reading (e.g. skip a stretch they don't need translated right now).
+Paragraphs between the old watermark and `fromIndex` are left untouched, not
+lost — `lastTranslatedIndex` simply stops representing "everything before this
+index is translated" and starts representing "translated *up to the first
+remaining gap*". Concretely, after every batch (explicit `fromIndex` or not),
+the watermark is recomputed by scanning forward from its current value for the
+first paragraph with `translatedText IS NULL`; the new watermark is the index
+right before that gap (or the last paragraph, if there is no gap). This means:
+- Translating out of order never desyncs anything the rest of the app reads
+  from `lastTranslatedIndex` — it just may not advance yet.
+- A later batch that happens to close a gap advances the watermark past the
+  whole newly-contiguous stretch in one step, not just past what that batch
+  itself translated.
+- `firstUntranslatedIndex` / `translatedCount` (used by the reader and library
+  progress bars) are plain existence/count queries, not watermark-derived, so
+  they're accurate regardless of translation order.
 
 ### 3.3 Reader View
 - Page `/books/[id]`, renders paragraphs starting from `lastReadIndex + 1` (auto-resume).
 - Display toggle: **translated only** / **original only** / **side-by-side**.
 - As the user scrolls / clicks "mark read up to here", `lastReadIndex` is updated.
+- Every read paragraph also has a "mark unread" control next to its "Sudah
+  dibaca" label. `lastReadIndex` is a single watermark (like
+  `lastTranslatedIndex` in §3.2, but explicitly allowed to move backwards —
+  see `setLastReadIndex` in `reader.ts`), so reverting one paragraph reverts
+  it *and everything after it* to unread — there's no way to un-read a single
+  paragraph in the middle while keeping later ones marked read, by the same
+  logic that marking read is "up to here", not "just this one". The action
+  reuses the same `PATCH /api/books/:id/progress` endpoint, just with
+  `lastReadIndex` set to `orderIndex - 1` instead of `orderIndex`.
+- The header has two "jump to my position" shortcuts: **Ke posisi baca
+  terakhir** (→ the page containing `lastReadIndex + 1`) and **Ke batas
+  terjemahan terakhir** (→ the page containing `lastTranslatedIndex + 1`).
+  Plain `?page=N` navigation via `pageForIndex` — no fetch, no client state.
+  Since browsing via numeric pagination can leave the reader far from either
+  watermark, these are the fast way back. Whichever one matches the page
+  already being viewed renders as a real disabled `<button>` rather than a
+  no-op link, the same convention as `Pagination.tsx`'s disabled ends.
 - If the paragraph the user wants to read hasn't been translated yet → a
   "Translate more" button triggers the next batch directly, without navigating away.
+- Every untranslated paragraph also has its own "Terjemahkan dari sini" control
+  (`TranslateFromHereButton`), which calls `POST /api/translate` with
+  `fromIndex` set to that paragraph — the reader-side entry point for §3.2's
+  explicit start index, for jumping translation ahead of a gap instead of only
+  ever continuing from the watermark.
+
+#### 3.3.1 Pagination
+
+Paragraphs are split into **fixed-size pages** of `READER_PAGE_SIZE` (30)
+paragraphs each, aligned to `orderIndex` — page 1 is indexes 0–29, page 2 is
+30–59, and so on (`src/lib/reader-schema.ts`). This is the same `orderIndex`
+ordering used everywhere else in the app (progress, batching, glossary), so a
+page number never disagrees with reading or translation progress — there is no
+separate "chapter" or "section" state to fall out of sync with.
+
+- **URL is the source of truth**: the current page lives in `?page=N` on
+  `/books/[id]`, not in component state. Opening the reader with no `page`
+  resumes on the page containing `lastReadIndex + 1`; an out-of-range value
+  clamps to `[1, totalPages]`; a non-numeric value falls back to resume. This
+  makes the reader trivially bookmarkable/shareable and removes an entire class
+  of state-sync bugs by construction.
+- **Numeric pagination** (`src/components/Pagination.tsx`, generic and reusable
+  — it knows nothing about paragraphs or books): First (`«`) / Previous (`‹`) /
+  windowed page numbers with `…` ellipses / Next (`›`) / Last (`»`). The active
+  page has a distinct style and `aria-current="page"`. First/Previous are
+  disabled (real `<button disabled>`, not a dead link) on page 1; Next/Last are
+  disabled on the last page. Clicking a number jumps straight to that page.
+- **Responsive, mobile-first**: two layouts are rendered and toggled with CSS
+  breakpoints (`sm:hidden` / `hidden sm:flex`), not a client-side media query —
+  the server can't know viewport width ahead of hydration, so a JS-based switch
+  would either mismatch on first paint or require a client-only render. Mobile
+  shows a compact `‹ 9 [10] 11 ›` (current page ±1, no ellipsis, no First/Last);
+  desktop shows the full `« ‹ 1 … 8 9 [10] 11 12 … 35 › »`. All controls are at
+  least 44×44px (touch-friendly).
+- **Performance**: the page-number list is windowed by construction — its
+  length is bounded by the sibling count (≈9 items max), never by `totalPages`.
+  A 3000-paragraph, 100-page book still renders the same handful of buttons a
+  10-page book does. This is separate from paragraph windowing, which was
+  already true since Phase 4 (one page's worth of paragraphs fetched at a
+  time, never the whole book).
+- **Accessibility**: the control is a `<nav aria-label="Navigasi halaman">`
+  wrapping a `<ul>`/`<li>` list. Every First/Previous/Next/Last control has an
+  `aria-label`; every page number link has `aria-label="Ke halaman N"`; the
+  active page carries `aria-current="page"`; ellipses are
+  `aria-hidden="true"` and non-interactive. All controls are plain `<a>` (via
+  `next/link`) or `<button>` elements, so Tab/Enter/Space and focus-visible
+  styling work without any custom keyboard handling.
 
 ### 3.4 Library View
 - List of all books, progress bar (`lastTranslatedIndex / totalParagraphs`),
   "Continue reading" / "Continue translating" buttons.
+- **Upload form** at the top of the page (`UploadBookForm`): file
+  (`.txt`/`.epub`) plus optional title/author, posting to `POST /api/books`.
+  Title falls back to the filename when left empty.
+- **Delete button** per book (`DeleteBookButton`) calling
+  `DELETE /api/books/:id`. Deletion cascades to paragraphs, progress, and
+  glossary terms — including all translated text — so the UI confirms with an
+  explicit warning before calling it. Irreversible by design; there is no
+  archive state.
+
+### 3.5 PWA / Offline Caching
+
+Scope is deliberately light: **cache pages already opened**, not a full
+offline-first rewrite. There's no client-side data layer (no IndexedDB copy of
+paragraphs) and no attempt to let the reader work on a page it has never
+visited — this app is still a Server Component reading Prisma/SQLite on every
+request; offline support here is a resilience layer on top of that, not a
+replacement for it.
+
+- **Installable**: `src/app/manifest.ts` (Next's file convention, auto-linked
+  into `<head>` — no manual `<link rel="manifest">`) + `public/icons/icon.svg`.
+  `viewport.themeColor` (not `metadata.themeColor` — moved in this Next.js
+  version, see `generateViewport` docs) and `metadata.appleWebApp` set the
+  status-bar/standalone-mode meta tags.
+- **Service worker** (`public/sw.js`, registered by
+  `RegisterServiceWorker.tsx`, **production builds only** — a service worker
+  caching hashed JS chunks fights `next dev`'s hot reload): every same-origin
+  **GET** response (navigations, Next's RSC fetches, static assets) is stored
+  network-first. If a later request for that exact URL fails, the last cached
+  response is served instead of a browser error page. Mutations
+  (POST/PATCH/DELETE — translate, mark-read, delete book) are never
+  intercepted; those need a live server by definition.
+- **First-visit-ever caveat** (standard service worker behavior, not a bug):
+  the page that triggers the *first* SW registration on a device is never
+  itself served from that registration — the SW isn't active yet when that
+  request goes out. Every page opened after that is cached normally,
+  including reopening that same first page later.
+- **Unvisited pages while offline** fall back to `public/offline.html`, a
+  static "you're offline and this page was never cached" page, rather than the
+  browser's default connection-error screen.
 
 ## 4. API Routes (planned)
 
@@ -111,7 +243,36 @@ Design notes:
 | GET    | /api/books/:id               | Book detail + paragraphs (paginated)       |
 | POST   | /api/translate               | Translate the next batch                   |
 | PATCH  | /api/books/:id/progress      | Manually update lastReadIndex              |
-| DELETE | /api/books/:id               | Delete a book                              |
+| DELETE | /api/books/:id               | Delete a book (built — cascades to paragraphs/progress/glossary) |
+| GET    | /api/books/:id/glossary      | List the book's glossary terms             |
+| POST   | /api/books/:id/glossary      | Add a glossary term                        |
+| PATCH  | /api/books/:id/glossary/:termId | Edit a glossary term                    |
+| DELETE | /api/books/:id/glossary/:termId | Delete a glossary term                  |
+
+### 4.1 Server / Client module boundary
+
+Reader and glossary pages are Server Components that query Prisma directly
+through `src/lib/`, so not every read needs an API route. That makes one mistake
+easy to commit and hard to diagnose:
+
+> **A Client Component must never import a runtime value from a module that
+> imports Prisma.** Doing so pulls better-sqlite3's native binding into the
+> browser bundle, and the build fails with `Module not found: Can't resolve
+> 'fs'` pointing deep inside `node_modules` — nowhere near the actual mistake.
+> `tsc` and `eslint` both pass in that state.
+
+Two rules keep it from recurring:
+
+1. Every module touching Prisma, the filesystem, or an API key starts with
+   `import "server-only"`. A bad import then fails the build with a message that
+   names the file and the reason.
+2. Types and constants a Client Component needs live in a **schema module** with
+   no Prisma import — `src/lib/glossary-schema.ts`, `src/lib/reader-schema.ts`.
+   The server module re-exports them so server code has a single import site.
+
+Note that `import type { … }` from a server module happens to be safe, since
+TypeScript erases it — but it reads identically to the unsafe form, so prefer
+the schema module in Client Components regardless.
 
 ## 5. Translation Prompt & Glossary
 
@@ -132,19 +293,28 @@ isn't blocked if one provider's free-tier limit is hit:
 
 ```ts
 // src/lib/translator/types.ts
+// Note: implemented shape (as of Phase 3) differs from earlier draft below —
+// this reflects what claudeClient.ts actually uses. geminiClient.ts (Phase 5)
+// must match this same shape.
 interface TranslationProvider {
-  translateBatch(promptText: string): Promise<string>;
+  translateBatch(request: { system: string; user: string }): Promise<{
+    text: string;
+    model: string;
+    usage?: unknown;
+  }>;
 }
 ```
 
-- `claudeClient.ts` — Anthropic API (default/primary)
-- `geminiClient.ts` — Google Gemini API (secondary/fallback)
+- `claudeClient.ts` — Anthropic API (implemented in Phase 3, currently the
+  working/tested provider)
+- `geminiClient.ts` — Google Gemini API (added in Phase 5 as a second provider,
+  same interface, selectable via `TRANSLATION_PROVIDER`)
 
 Both use the exact same prompt template from `TRANSLATION_RULES.md` — only the
 API call differs — so translation style doesn't depend on which provider handled
 a given batch. Provider selection is controlled via config (`.env.local`), with
 optional automatic fallback (try primary, fall back to secondary on rate-limit
-error) as a Phase 2 feature.
+error) as a later enhancement (Phase 7).
 
 ## 7. Configuration
 
@@ -152,16 +322,65 @@ error) as a Phase 2 feature.
 ```
 ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
-TRANSLATION_PROVIDER=anthropic   # "anthropic" | "gemini"
+TRANSLATION_PROVIDER=claude   # "claude" | "gemini"
 DEFAULT_MAX_CHARS=3000
 DATABASE_URL="file:./dev.db"
 ```
 
+### 7.1 VPS Deployment (Docker + Drone CI)
+
+`Dockerfile` + `docker-compose.yml` + `.drone.yml`, adapted from the user's
+existing Drone CI / Nginx Proxy Manager pattern used for other apps. Key
+differences from that reference pattern, and why:
+
+- **SQLite stays SQLite** — no Postgres service. Single-user personal app
+  (CLAUDE.md), so SQLite's concurrency limits don't apply; the one thing that
+  matters in a container is that the `.db` file lives on a **named volume**
+  (`sqlite_data:/app/data`), not the container's writable layer, so
+  `docker compose up -d --build` on every deploy doesn't wipe progress data.
+- **No MinIO, no SMTP, no Google OAuth, no `DATA_ENCRYPTION_MASTER_KEY`** —
+  this app has no file storage beyond the DB, no email flows, and explicitly
+  "No auth/session management needed" (CLAUDE.md). Access control for the
+  publicly-reachable VPS instance is basic auth at the reverse proxy (Nginx
+  Proxy Manager Access List), entirely outside this repo — the app itself is
+  unaware it's behind one.
+- **Runtime is Node.js, not Bun** — deliberately, not by default. Bun 1.3.x
+  (tested on both macOS and Linux/arm64) crashes with a fatal NAPI error
+  (`Error::New napi_get_last_error_info`) the moment `better-sqlite3`'s native
+  binding is loaded — confirmed to be a Bun bug (its own crash reporter says
+  so), not a config issue, before ruling it out. Since every DB call goes
+  through `@prisma/adapter-better-sqlite3` → `better-sqlite3`, this isn't a
+  narrow edge case; it would crash on the first request that touches the
+  database. Dockerfile uses `node:20-slim` instead of `oven/bun` for this app
+  only — everything else (Drone pipeline shape, Nginx Proxy Manager in front,
+  `docker compose down && up -d --build` deploy step) matches the reference.
+- **`migrate` is a one-shot service** (`npx prisma migrate deploy`), same
+  shape as the reference's Postgres migrate step, but simpler: no DB server to
+  health-check, just the same named volume mounted read/write before `app`
+  starts (`depends_on: condition: service_completed_successfully`).
+- **Both `ANTHROPIC_API_KEY` and `GEMINI_API_KEY`** are wired as secrets, so
+  `TRANSLATION_PROVIDER` can be flipped on the VPS (edit the Drone secret,
+  redeploy) without touching code, matching §6's provider-agnostic design.
+- **`next.config.ts`**: `output: "standalone"` (self-contained
+  `.next/standalone`, no need to ship full `node_modules`) plus
+  `outputFileTracingIncludes` explicitly covering
+  `node_modules/better-sqlite3/**/*` — its prebuilt binaries are resolved via
+  a dynamically-computed path (per platform/arch), which static output-file
+  tracing can miss.
+- **Not yet verified end-to-end** (`docker compose up` against a real
+  container) — the local build was taking long enough that verification was
+  deferred to the actual VPS deploy rather than block on it here. If the first
+  Drone deploy fails, check in this order: (1) missing/wrong secret at
+  `drone/data/vieyama/novel-translator`, (2) `better-sqlite3`'s native binary
+  not present in `.next/standalone/node_modules` (the `outputFileTracingIncludes`
+  escape hatch above exists for exactly this), (3) `migrate` failing before
+  `app` ever starts (check its container logs specifically, not `app`'s).
+
 ## 8. MVP Scope (Phase 1)
 
 1. Import `.txt` only, for now (easiest to parse).
-2. Manually-triggered batch translation ("Translate next batch" button), Claude
-   as the only provider — Gemini support comes in Phase 2.
+2. Manually-triggered batch translation ("Translate next batch" button), Gemini
+   as the provider used for testing.
 3. Simple reader: paragraph list + translated/not-translated status.
 4. Auto-resume for both read and translate position.
 
@@ -170,7 +389,8 @@ DATABASE_URL="file:./dev.db"
 - Support `.epub` and `.pdf`.
 - Side-by-side bilingual view.
 - Translate-ahead in the background (pre-translate a few batches so you never wait).
-- Add Gemini provider + automatic fallback when the primary provider's limit is hit.
+- Add Claude/Anthropic as a second provider + automatic fallback when the
+  primary provider's limit is hit.
 - Export translated output to a new `.txt`/`.epub` file.
 
 ## 10. Open Questions

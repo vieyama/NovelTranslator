@@ -28,7 +28,7 @@ export interface TranslationResponse {
 }
 
 export interface TranslationProvider {
-  /** Stable id for logging / config (`"anthropic"`, later `"gemini"`). */
+  /** Matches the `TRANSLATION_PROVIDER` value: `"claude"` or `"gemini"`. */
   readonly id: string;
   translateBatch(request: TranslationRequest): Promise<TranslationResponse>;
 }

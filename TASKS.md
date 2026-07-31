@@ -4,7 +4,7 @@ Implementation checklist for Claude Code. Work through phases in order — don't
 start a later phase until the current one is checked off and manually verified
 per the "Definition of Done" in CLAUDE.md.
 
-## Phase 0 — Project Setup
+## Phase 0 — Project Setup ✅
 
 - [x] Initialize Next.js (App Router, TypeScript) project
 - [x] Install & configure Tailwind CSS
@@ -28,7 +28,7 @@ Notes:
   (eslint/postcss chains); fixing needs breaking major upgrades, skipped for a
   local single-user app.
 
-## Phase 1 — Data Layer
+## Phase 1 — Data Layer ✅
 
 - [x] Write `prisma/schema.prisma` per SPEC.md §2 (`Book`, `Paragraph`,
       `ReadingProgress`, `GlossaryTerm`)
@@ -52,7 +52,7 @@ Notes:
 - `postinstall: prisma generate` added, since the generated client lives in
   `src/generated/prisma` (gitignored) and would be missing after a fresh clone.
 
-## Phase 2 — TXT Import (MVP)
+## Phase 2 — TXT Import (MVP) ✅
 
 - [x] `src/lib/parser/txt.ts`: split raw text into paragraphs (`\n\n`), trim,
       compute `charCount`
@@ -80,7 +80,7 @@ Notes:
 - No upload UI yet — Phase 2 is API-only, so the manual test is a `curl` command.
   The library UI arrives in Phase 4.
 
-## Phase 3 — Translation Engine
+## Phase 3 — Translation Engine ✅
 
 - [x] `src/lib/translator/prompt.ts`: build prompt from TRANSLATION_RULES.md
       template + injected glossary terms
@@ -116,9 +116,12 @@ Notes:
   `translateBatch(request)` takes `{ system, user }` and returns
   `{ text, model, usage }` rather than `string → string`, so the rules can go in
   the system prompt and token usage is visible. The provider-agnostic shape is
-  unchanged — the route never imports Anthropic.
+  unchanged — the route never imports Anthropic directly.
+  **Important for Phase 5 below: `geminiClient.ts` must implement this same
+  `{ system, user } → { text, model, usage }` shape, not the older `string →
+  string` shape from SPEC.md §6.**
 
-## Phase 4 — Reader UI (MVP)
+## Phase 4 — Reader UI (MVP) ✅
 
 - [x] `/books` page: library list, progress bar per book, "Continue reading" /
       "Continue translating" buttons
@@ -137,8 +140,10 @@ Notes:
   `src/lib/reader.ts` rather than through a `GET /api/books/:id`, since server
   components can query directly.
 - Reader is windowed at 30 paragraphs (`READER_PAGE_SIZE`) with prev/next links;
-  a 3000-paragraph novel would be unusable rendered in full. `?from=` overrides
-  the resume position without changing it.
+  a 3000-paragraph novel would be unusable rendered in full. **Superseded below**
+  by the numeric pagination upgrade — navigation is now `?page=N` (1-based page
+  number), not `?from=` (a raw `orderIndex`); see the pagination entry further
+  down this phase and SPEC.md §3.3.1.
 - `lastReadIndex` may move backwards — re-reading an earlier chapter is normal.
   Only `lastTranslatedIndex` is monotonic.
 - View mode persists in `localStorage` via `useSyncExternalStore`. A
@@ -148,25 +153,307 @@ Notes:
 - **Still no upload UI** — the library's empty state points at
   `POST /api/books`. Adding a book is still a `curl`.
 
-## Phase 5 — Glossary (MVP-adjacent, do after Phase 4 works)
+## Phase 5 — Add Gemini Provider ✅
 
-- [ ] `GlossaryTerm` CRUD API (`/api/books/:id/glossary`)
-- [ ] Simple glossary editor UI on the book detail page
-- [ ] Wire glossary terms into the translate prompt (Phase 3 already expects
-      this — confirm it's actually being injected, not just a stub)
+Claude is already working and tested (Phase 3). This phase adds Gemini as a
+**second** provider, selectable via env var, without touching the translate
+route's contract.
 
-## Phase 6 — Polish / Phase 2 Features (only after MVP fully works)
+- [x] Add `GEMINI_API_KEY` and `TRANSLATION_PROVIDER` (`"claude"` | `"gemini"`)
+      to `.env.local` and `.env.local.example`
+- [x] `src/lib/translator/geminiClient.ts`: implement the **same interface as
+      `claudeClient.ts`** — `translateBatch({ system, user }) → { text, model,
+      usage }` (see Phase 3 notes above; do not use the older SPEC.md §6
+      `string → string` shape, it's outdated)
+- [x] Provider selection in `POST /api/translate`: read `TRANSLATION_PROVIDER`
+      from env, instantiate the matching client. The route logic (fetch
+      paragraphs, batch, parse response, update DB, watermark rules) stays
+      identical regardless of provider — only the client swaps.
+- [x] Confirm `parseResponse.ts` and the `---PARAGRAPH---` validation apply
+      unchanged to Gemini's output (Gemini may format slightly differently —
+      test this explicitly, don't assume).
+- [x] Confirm the glossary + `TRANSLATION_RULES.md` prompt template is shared
+      between both clients (same system prompt content, not two copies).
+- [x] Manual test: set `TRANSLATION_PROVIDER=gemini`, translate a batch on the
+      test book, confirm same DB update behavior as the Claude test in Phase 3
+      (paragraph count matches, watermark advances correctly, failures don't
+      bump the index).
+- [~] Manual test: switch back to `TRANSLATION_PROVIDER=claude`, confirm it
+      still works (no regression from adding Gemini). — **Selection path
+      verified, live call NOT run: `ANTHROPIC_API_KEY` is still empty.**
 
-- [ ] EPUB parser (`src/lib/parser/epub.ts`)
+Notes:
+- `src/lib/translator/provider.ts` is the only place that knows which providers
+  exist. `POST /api/translate` calls `resolveProvider()` and passes the result
+  into the unchanged `translateNextBatch`, so batching, `parseResponse`, and the
+  watermark rules are shared verbatim.
+- **Prompt sharing verified by assertion, not by eye**: the `systemInstruction`
+  Gemini receives is byte-identical to what `buildPrompt()` produces, glossary
+  included. There is no second copy of the rules.
+- `TRANSLATION_PROVIDER` accepts `claude`/`anthropic` and `gemini`/`google`,
+  case-insensitively. An unknown value is a 500 with a clear message rather than
+  a silent fallback.
+- **`claudeClient`'s `id` changed from `"anthropic"` to `"claude"`** so the
+  `provider` field in the API response matches the config value.
+- **Default Gemini model is `gemini-flash-latest`, not Pro.** A live call proved
+  `gemini-pro-latest` resolves to `gemini-3.1-pro`, which has a **free-tier quota
+  of zero** — it 429s immediately. Set `GEMINI_MODEL=gemini-pro-latest` if the
+  key is on a paid plan.
+- Gemini failure mapping matches Claude's, so the watermark rules behave
+  identically: `MAX_TOKENS` → truncated, `SAFETY`/`RECITATION`/`PROHIBITED_CONTENT`
+  → refusal, blocked prompt → refusal, 429 → provider_error, 403 → missing key.
+  "Thought" parts are filtered out so reasoning can never be stored as a
+  translated paragraph.
+
+## Phase 6 — Glossary ✅
+
+- [x] `GlossaryTerm` CRUD API (`/api/books/:id/glossary`)
+- [x] Simple glossary editor UI on the book detail page
+- [x] Wire glossary terms into the translate prompt for **both** providers
+      (confirm it's actually being injected, not just a stub)
+
+Notes:
+- Editor lives at `/books/:id/glossary`, linked from the reader header. Kept off
+  the reader itself so the reading surface stays uncluttered.
+- API: `GET`/`POST /api/books/:id/glossary`, `PATCH`/`DELETE
+  /api/books/:id/glossary/:termId`. `PATCH` is field-by-field, so
+  `{"translation": null}` clears the translation without touching the note.
+- Empty translation = "keep unchanged" (GLOSSARY.md), stored as `null` and shown
+  as *biarkan apa adanya*.
+- Duplicate term → 409 via an explicit pre-check, so the message names the term
+  instead of surfacing a raw unique-constraint error.
+- **Dual-provider injection verified by assertion, not inspection**: the same
+  batch was run against both clients with `fetch` stubbed, request URLs checked
+  (`anthropic.com` vs `googleapis.com`), and the glossary lines found in
+  Anthropic's `system` *and* Gemini's `systemInstruction` — which are
+  byte-identical. Also verified a term added later shows up in the next batch,
+  and that an empty glossary still produces a sane prompt.
+- **`src/lib/glossary-schema.ts` exists for a reason**: `glossary.ts` imports
+  Prisma, and a `"use client"` component importing a runtime value from it drags
+  better-sqlite3's native binding into the browser bundle (`Can't resolve 'fs'`).
+  `tsc` and `eslint` both pass in that state — only loading the page catches it.
+  Client components import categories/types from the schema module.
+- **Hardened afterwards** so the same mistake can't be made silently again:
+  - `import "server-only"` added to every Prisma / filesystem / API-key module
+    (`db`, `books`, `reader`, `glossary`, and `translator/*` except the pure
+    `types.ts` and `parseResponse.ts`). Verified by deliberately re-introducing
+    the bad import: the build now fails naming `server-only` and the offending
+    file, instead of `Can't resolve 'fs'` inside `node_modules`.
+  - `src/lib/reader-schema.ts` added, mirroring `glossary-schema.ts`, so the
+    reader's Client Components no longer reference `@/lib/reader` at all. (Those
+    were `import type` and therefore erased — safe, but one keystroke from
+    breaking.)
+  - Rule documented in CLAUDE.md, SPEC.md §4.1, and GLOSSARY.md.
+
+## Phase 7 — Polish / Remaining Features (only after MVP fully works)
+
+- [x] EPUB parser (`src/lib/parser/epub.ts`)
+      - Deps: `fflate` (unzip) + `fast-xml-parser`, both pure JS — no native
+        bindings, so nothing new to worry about at the server/client boundary.
+      - Reading order comes from the OPF **spine**, never zip entry order.
+        `chapterIndex` = spine document index. Handles `../` and
+        percent-encoded hrefs, missing `container.xml` (scans for the `.opf`),
+        missing/non-XHTML spine targets (skipped), and single-item
+        manifests/spines.
+      - Malformed EPUB → `EpubParseError` → HTTP 422 with a readable message;
+        `.txt` upload behaviour unchanged.
+      - **Regression found and fixed while testing**: adding `import
+        "server-only"` broke `npm run db:seed`, because the guard only compiles
+        away under the `react-server` export condition, which plain Node does
+        not set. Seed command is now
+        `tsx --conditions=react-server prisma/seed.ts`; documented in CLAUDE.md.
 - [ ] PDF parser (`src/lib/parser/pdf.ts`) with cleanup/preview step
-- [ ] Gemini provider (`src/lib/translator/geminiClient.ts`), same prompt
-      template, swappable via config/env
-- [ ] Provider fallback logic (try Claude, fall back to Gemini on rate limit)
+- [ ] Provider fallback logic (try primary, fall back to the other provider on
+      rate limit / error)
 - [ ] Background pre-translation (translate ahead while reading)
 - [ ] Export translated book to `.txt`
+- [x] Book upload UI + delete book (pulled forward on user request — the app
+      previously opened straight into existing books with no way to add or
+      remove one from the UI)
+      - `UploadBookForm` on `/books`: file (.txt/.epub) + optional title/author,
+        posts to the existing `POST /api/books`; empty fields are omitted so the
+        filename-fallback title still applies.
+      - `DELETE /api/books/:id` implemented (was planned in SPEC.md §4 since
+        Phase 1 but never built). Cascade removes paragraphs, progress, and
+        glossary; verified zero orphan rows afterwards. **Deleting destroys the
+        translated text too**, so the button's confirm dialog says exactly that.
+      - Delete again / unknown id → 404.
+- [x] Reader pagination upgrade (ad hoc user request — Previous/Next-only
+      navigation was unusable on long novels)
+      - [x] Numeric pagination: `src/components/Pagination.tsx`, a generic
+            First/Prev/[1 … 8 9 **10** 11 12 …]/Next/Last control with no
+            reader-specific knowledge (caller supplies `getHref`).
+      - [x] Windowed pagination: page-number list length is bounded by sibling
+            count (≈9 items), never by `totalPages` — verified a 100-page book
+            renders the same button count as a 10-page one. Unrelated to, and
+            in addition to, the paragraph windowing that's existed since Phase 4.
+      - [x] Responsive pagination: two layouts (mobile compact, desktop full),
+            toggled with `sm:hidden`/`hidden sm:flex`, not a JS media query —
+            avoids a hydration mismatch, since the server can't know viewport
+            width. All controls ≥44×44px.
+      - [x] Accessibility: `<nav aria-label>` + `<ul>/<li>`, `aria-current="page"`
+            on the active page, `aria-label` on every control, disabled ends are
+            real `<button disabled>` (an `<a>` has no accessible disabled
+            state), ellipses `aria-hidden`. Native `<a>`/`<button>` elements, so
+            keyboard Tab/Enter/Space and focus-visible work with no custom
+            handling.
+      - [x] Pagination state management: the URL (`?page=N`) is the only source
+            of truth — no component state duplicates it. `getReaderPage` now
+            takes `requestedPage` instead of `requestedFrom`;
+            `pageForIndex`/`fromForPage`/`totalPagesFor` (pure, in
+            `reader-schema.ts`) convert between an absolute `orderIndex` and a
+            page number wherever needed (the reader itself, and the library's
+            "Lanjut menerjemahkan" link).
+      - Verified: pure range-generator functions (31 checks: exact spec example
+        `1 … 8 9 10 11 12 … 35`, mobile `9 10 11`, boundary/edge cases) +
+        end-to-end against a live 320-paragraph/11-page test book (resume,
+        direct page jump, out-of-range clamp, non-numeric fallback, mark-read
+        keeping the same page, disabled-state placement) + screenshots at
+        desktop and 375px mobile widths.
+      - SPEC.md §3.3.1 is the source of truth for the behavior; see also
+        CLAUDE.md's new "Reusable UI Components" and "URL-Driven State" notes.
+- [x] Explicit translate start index (`fromIndex`) (ad hoc user request — user
+      had read ahead to #180 while translation was stuck at #33 and asked
+      whether translation could jump to wherever they're reading instead of
+      only ever continuing in order)
+      - `POST /api/translate` accepts an optional `fromIndex`; `translateNextBatch`
+        anchors its pending-paragraph search there instead of at
+        `lastTranslatedIndex` when given.
+      - `lastTranslatedIndex` semantics changed from "always the end of the
+        just-written batch" to "last index before the next untranslated gap",
+        recomputed from actual DB state after every batch
+        (`advanceWatermark` in `translateNextBatch.ts`) — this is what lets a
+        later batch auto-close an earlier gap in one step, and what makes
+        translating out of order safe: nothing reading `lastTranslatedIndex`
+        elsewhere (progress bars, "Lanjut menerjemahkan") can end up claiming
+        an untranslated paragraph is done. `firstUntranslatedIndex` /
+        `translatedCount` were already plain queries, not watermark-derived,
+        so they needed no change.
+      - `TranslateFromHereButton` (new, `components/reader/`): per-paragraph
+        trigger next to every untranslated paragraph, self-contained like
+        `TranslateBatchButton` (own fetch/busy/error state, `router.refresh()`
+        on success) rather than routed through `ReaderView`'s state, matching
+        the existing per-control-owns-its-request pattern.
+      - Verified: 12 assertions against a stub `TranslationProvider` (no real
+        API calls) covering jump-ahead-leaves-gap, DB state after the jump,
+        gap-fill advancing the watermark past the whole now-contiguous
+        stretch in one step, done-state on a fully translated book, and
+        rejection of an out-of-range `fromIndex` — plus a live screenshot
+        confirming the button renders once per untranslated paragraph.
+      - SPEC.md §3.2 documents the new `fromIndex` behavior and the
+        recomputed-watermark rule.
+- [x] Revert a read paragraph back to unread (ad hoc user request, follow-up
+      to the `fromIndex` one above)
+      - No backend change needed: `setLastReadIndex` already allowed moving
+        `lastReadIndex` backward (`reader.ts` already documented this as
+        intentional — "re-reading an earlier chapter is a normal thing to
+        do"). Purely a UI gap.
+      - `ParagraphBlock` gained an `onMarkUnread` control next to "Sudah
+        dibaca" on every read paragraph; `ReaderView`'s `markUnread(orderIndex)`
+        calls the same progress PATCH as `markRead`, just with
+        `orderIndex - 1`.
+      - Busy-state tracking (`markingIndex`) is keyed to the *clicked*
+        paragraph, not the value sent to the API — `markUnread(50)` sends
+        `lastReadIndex: 49` but still shows "Menyimpan…" on paragraph #50,
+        via a shared `updateLastReadIndex(newValue, markingKey)` helper.
+      - Since `lastReadIndex` is a single watermark, reverting paragraph N
+        also reverts everything after it (documented in SPEC.md §3.3) — the
+        same contiguity rule "mark read up to here" already has, just
+        backward. No confirm dialog: consistent with the rest of the app,
+        where only book deletion (destroys data) requires one.
+      - Verified: live PATCH against a 6-paragraph test book with
+        `lastReadIndex=4`, reverting paragraph #2 → `lastReadIndex` becomes 1
+        and the read/unread button counts flip from 5/1 to 2/4 exactly as
+        expected.
+- [x] "Jump to my position" shortcuts in the reader header (ad hoc user
+      request, follow-up to the two above — browsing via numeric pagination
+      can land far from either watermark)
+      - Two `GoToPageButton`s (local to `ReaderView.tsx`, not extracted —
+        only used twice, no second use case yet): "Ke posisi baca terakhir"
+        → `pageForIndex(lastReadIndex + 1)`, "Ke batas terjemahan terakhir"
+        → `pageForIndex(lastTranslatedIndex + 1)`. Pure navigation
+        (`next/link`), no fetch — same URL-is-source-of-truth pattern as the
+        rest of pagination.
+      - Whichever target equals the page already being viewed renders as a
+        real disabled `<button>`, not a dead link — same rule `Pagination.tsx`
+        already follows for its First/Prev/Next/Last ends.
+      - Verified: 100-paragraph test book with `lastReadIndex=95` (page 4) and
+        `lastTranslatedIndex=10` (page 1), viewed from page 2 — both render as
+        links to the right page; viewing page 4 disables the read shortcut,
+        viewing page 1 disables the translate shortcut. Screenshot confirms
+        layout.
+      - SPEC.md §3.3 documents both shortcuts.
+- [x] PWA / lightweight offline caching (ad hoc user request — user picked
+      the "cache pages already opened" scope out of three offered options,
+      not a full offline-first client-data rewrite)
+      - Installable: `src/app/manifest.ts` (Next file convention, auto-linked)
+        + `public/icons/icon.svg` (SVG-only, no PNG generation — Chrome/Edge
+        install works fine with `sizes: "any"`; iOS home-screen icon quality
+        is a known, accepted gap, not addressed here) + `src/app/icon.svg`
+        (favicon).
+      - Hit a real Next.js API-drift issue while wiring this up (matches the
+        class of thing CLAUDE.md warns about elsewhere): `metadata.themeColor`
+        is rejected by this Next.js version with a build warning — it moved to
+        a separate `viewport` export (confirmed via
+        `node_modules/next/dist/docs/.../generate-viewport.md` before fixing,
+        not guessed). `layout.tsx` now exports both `metadata` and `viewport`.
+      - `public/sw.js`: network-first-with-cache-fallback for every
+        same-origin GET (navigations, RSC fetches, static assets); mutations
+        (POST/PATCH/DELETE) are never intercepted. `RegisterServiceWorker.tsx`
+        registers it client-side, **production builds only** (a SW caching
+        hashed chunks fights `next dev`'s hot reload).
+      - `public/offline.html`: static fallback shown for a navigation to a
+        page that was never cached and the network is down.
+      - Verified: `tsc`/`eslint`/`npm run build` clean. Live test against a
+        production build (`npm run start`) with a persistent headless-Chrome
+        profile: warmed the cache by visiting `/books` then a book page, then
+        killed the server entirely and reloaded — the book page rendered its
+        real cached content offline, and a third, never-visited page (the
+        glossary) correctly showed `offline.html`. `/books` itself came back
+        as `offline.html` on the same run, which turned out to be expected,
+        not a bug: it was the very first page ever opened in that profile,
+        so the service worker wasn't active yet when *that* request went out
+        (standard SW behavior — the registering page is never covered by its
+        own registration; every visit after it is). Cache Storage on disk
+        (`Service Worker/CacheStorage`) confirmed entries were written.
+      - SPEC.md §3.5 is the source of truth for scope and the first-visit
+        caveat above.
+- [x] VPS deployment via Docker + Drone CI (ad hoc user request — adapted from
+      the user's existing Drone CI / Nginx Proxy Manager pattern used for
+      other apps)
+      - Stripped Postgres/MinIO/SMTP/Google OAuth/`DATA_ENCRYPTION_MASTER_KEY`
+        from the reference — none apply here (SQLite, no file storage beyond
+        the DB, no auth by design). Kept the same pipeline shape (`write-env`
+        → `deploy` steps, Vault-backed secrets, `docker compose down && up -d
+        --build`).
+      - **Runtime decision reversed mid-task based on evidence, not
+        assumption**: user's default preference was Bun (matches their other
+        apps), but Bun 1.3.x fatally crashes loading `better-sqlite3`'s native
+        binding — verified on both macOS and Linux/arm64 via Docker before
+        concluding it's a genuine Bun bug, not a local config problem, then
+        confirmed the Node.js fallback with the user rather than silently
+        picking one. `Dockerfile` uses `node:20-slim`.
+      - `next.config.ts`: `output: "standalone"` +
+        `outputFileTracingIncludes` for `better-sqlite3` (prebuilt binary path
+        is computed dynamically per platform/arch — a static tracer can miss
+        it; belt-and-suspenders rather than assuming it's caught).
+      - `migrate` one-shot service (`prisma migrate deploy`) shares a named
+        SQLite volume with `app`, gated by
+        `depends_on: condition: service_completed_successfully` — same shape
+        as the reference's Postgres migrate step, minus the health-check
+        (no separate DB server to wait for).
+      - Both `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` wired as secrets so
+        `TRANSLATION_PROVIDER` can be flipped without a code change.
+      - **Not verified end-to-end** — the local `docker build` was slow enough
+        that the user asked to skip it and report back from the actual VPS
+        deploy instead. SPEC.md §7.1 lists the three most likely failure
+        points to check first if the first Drone deploy fails.
 
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order
 - [ ] A failed translate batch never advances `lastTranslatedIndex`
 - [ ] Progress survives a full app restart
+- [ ] No Client Component imports a runtime value from a Prisma-touching module
+      (SPEC.md §4.1). `tsc` and `eslint` do not catch this — run `npm run build`
+      and open the affected page before calling a UI phase done.

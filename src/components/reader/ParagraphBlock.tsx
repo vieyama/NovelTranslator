@@ -1,7 +1,9 @@
 "use client";
 
-import type { ReaderParagraph } from "@/lib/reader";
+// From the schema module, not `@/lib/reader` — that one imports Prisma.
+import type { ReaderParagraph } from "@/lib/reader-schema";
 
+import { TranslateFromHereButton } from "./TranslateFromHereButton";
 import type { ViewMode } from "./types";
 
 /**
@@ -11,17 +13,21 @@ import type { ViewMode } from "./types";
  * first per TASKS.md Phase 4.
  */
 export function ParagraphBlock({
+  bookId,
   paragraph,
   viewMode,
   isRead,
   isMarking,
   onMarkRead,
+  onMarkUnread,
 }: {
+  bookId: string;
   paragraph: ReaderParagraph;
   viewMode: ViewMode;
   isRead: boolean;
   isMarking: boolean;
   onMarkRead: (orderIndex: number) => void;
+  onMarkUnread: (orderIndex: number) => void;
 }) {
   const showOriginal = viewMode === "original" || viewMode === "side-by-side";
   const showTranslated = viewMode === "translated" || viewMode === "side-by-side";
@@ -61,10 +67,13 @@ export function ParagraphBlock({
               {paragraph.translatedText}
             </p>
           ) : (
-            <p className="text-sm italic text-amber-700 dark:text-amber-400">
-              Belum diterjemahkan.
-              {viewMode === "translated" && " Ganti ke mode “Asli” untuk membaca teks sumbernya."}
-            </p>
+            <div>
+              <p className="text-sm italic text-amber-700 dark:text-amber-400">
+                Belum diterjemahkan.
+                {viewMode === "translated" && " Ganti ke mode “Asli” untuk membaca teks sumbernya."}
+              </p>
+              <TranslateFromHereButton bookId={bookId} orderIndex={paragraph.orderIndex} />
+            </div>
           ))}
       </div>
 
@@ -74,13 +83,23 @@ export function ParagraphBlock({
         </span>
 
         {isRead ? (
-          <span className="text-emerald-700 dark:text-emerald-400">Sudah dibaca</span>
+          <>
+            <span className="text-emerald-700 dark:text-emerald-400">Sudah dibaca</span>
+            <button
+              type="button"
+              onClick={() => onMarkUnread(paragraph.orderIndex)}
+              disabled={isMarking}
+              className="rounded cursor-pointer text-zinc-400 opacity-0 transition-opacity hover:text-amber-700 focus:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 group-hover:opacity-100 disabled:cursor-wait disabled:opacity-70 dark:hover:text-amber-400"
+            >
+              {isMarking ? "Menyimpan…" : "Tandai belum dibaca"}
+            </button>
+          </>
         ) : (
           <button
             type="button"
             onClick={() => onMarkRead(paragraph.orderIndex)}
             disabled={isMarking}
-            className="rounded text-zinc-400 opacity-0 transition-opacity hover:text-emerald-700 focus:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 group-hover:opacity-100 disabled:cursor-wait dark:hover:text-emerald-400"
+            className="rounded cursor-pointer text-zinc-400 opacity-0 transition-opacity hover:text-emerald-700 focus:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 group-hover:opacity-100 disabled:cursor-wait dark:hover:text-emerald-400"
           >
             {isMarking ? "Menyimpan…" : "Tandai sudah dibaca sampai sini"}
           </button>

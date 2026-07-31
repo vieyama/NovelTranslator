@@ -1,0 +1,83 @@
+kind: pipeline
+type: docker
+name: deploy
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+
+steps:
+  # ─────────────────────────────────────────
+  # 1. Write .env file from secrets
+  # ─────────────────────────────────────────
+  - name: write-env
+    image: alpine
+    environment:
+      APP_PORT:
+        from_secret: APP_PORT
+      TRANSLATION_PROVIDER:
+        from_secret: TRANSLATION_PROVIDER
+      ANTHROPIC_API_KEY:
+        from_secret: ANTHROPIC_API_KEY
+      GEMINI_API_KEY:
+        from_secret: GEMINI_API_KEY
+    commands:
+      - |
+        cat > /drone/src/.env <<EOF
+        APP_BIND_ADDRESS=0.0.0.0
+        APP_PORT=$${APP_PORT}
+        TRANSLATION_PROVIDER=$${TRANSLATION_PROVIDER}
+        ANTHROPIC_API_KEY=$${ANTHROPIC_API_KEY}
+        GEMINI_API_KEY=$${GEMINI_API_KEY}
+        COMPOSE_PROJECT_NAME=novel-translator
+        EOF
+
+  # ─────────────────────────────────────────
+  # 2. Deploy via Docker Compose
+  # ─────────────────────────────────────────
+  - name: deploy
+    image: docker:24-cli
+    volumes:
+      - name: docker-sock
+        path: /var/run/docker.sock
+    commands:
+      - apk add --no-cache docker-cli-compose
+      - cd /drone/src
+      - docker compose down --remove-orphans
+      - docker compose up -d --build
+      - docker compose ps
+
+volumes:
+  - name: docker-sock
+    host:
+      path: /var/run/docker.sock
+
+---
+kind: secret
+name: APP_PORT
+get:
+  path: drone/data/vieyama/novel-translator
+  name: APP_PORT
+
+---
+kind: secret
+name: TRANSLATION_PROVIDER
+get:
+  path: drone/data/vieyama/novel-translator
+  name: TRANSLATION_PROVIDER
+
+---
+kind: secret
+name: ANTHROPIC_API_KEY
+get:
+  path: drone/data/vieyama/novel-translator
+  name: ANTHROPIC_API_KEY
+
+---
+kind: secret
+name: GEMINI_API_KEY
+get:
+  path: drone/data/vieyama/novel-translator
+  name: GEMINI_API_KEY

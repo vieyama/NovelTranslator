@@ -1,3 +1,7 @@
+// Server-only: importing this from a Client Component would pull secrets
+// and/or native bindings into the browser bundle. Holds ANTHROPIC_API_KEY.
+import "server-only";
+
 import Anthropic from "@anthropic-ai/sdk";
 
 import {
@@ -35,7 +39,9 @@ let cachedClient: Anthropic | null = null;
 
 export function createClaudeProvider(): TranslationProvider {
   return {
-    id: "anthropic",
+    // Matches the TRANSLATION_PROVIDER value, so the API response names the
+    // provider the same way the config does.
+    id: "claude",
     translateBatch,
   };
 }

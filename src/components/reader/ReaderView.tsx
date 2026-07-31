@@ -4,7 +4,9 @@ import { useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import type { ReaderPage } from "@/lib/reader";
+// From the schema module, not `@/lib/reader` — that one imports Prisma.
+import { pageForIndex, type ReaderPage } from "@/lib/reader-schema";
+import { Pagination } from "@/components/Pagination";
 
 import { ParagraphBlock } from "./ParagraphBlock";
 import { TranslateBatchButton } from "./TranslateBatchButton";
@@ -37,15 +39,20 @@ export function ReaderView({ page }: { page: ReaderPage }) {
     getViewModeServerSnapshot,
   );
 
-  async function markRead(orderIndex: number) {
-    setMarkingIndex(orderIndex);
+  /**
+   * `markingKey` is the paragraph whose button was clicked — kept separate
+   * from `newLastReadIndex` (the value actually sent) so the busy state stays
+   * on the right paragraph for `markUnread`, which sends `orderIndex - 1`.
+   */
+  async function updateLastReadIndex(newLastReadIndex: number, markingKey: number) {
+    setMarkingIndex(markingKey);
     setMarkError(null);
 
     try {
       const response = await fetch(`/api/books/${page.book.id}/progress`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lastReadIndex: orderIndex }),
+        body: JSON.stringify({ lastReadIndex: newLastReadIndex }),
       });
 
       if (!response.ok) {
@@ -62,7 +69,22 @@ export function ReaderView({ page }: { page: ReaderPage }) {
     }
   }
 
-  const { book, progress, paragraphs, window: pageWindow } = page;
+  function markRead(orderIndex: number) {
+    return updateLastReadIndex(orderIndex, orderIndex);
+  }
+
+  /**
+   * Reverts `orderIndex` (and everything after it) to unread — `lastReadIndex`
+   * is a single watermark (SPEC.md §3.3), so "unread from here" is really
+   * "move the watermark to just before here", the same mechanism as marking
+   * read, just backward (already anticipated by `setLastReadIndex` allowing
+   * the value to decrease — see `reader.ts`).
+   */
+  function markUnread(orderIndex: number) {
+    return updateLastReadIndex(orderIndex - 1, orderIndex);
+  }
+
+  const { book, progress, paragraphs, pagination } = page;
 
   // Where the translate prompt belongs: the first untranslated paragraph that
   // is actually on screen.
@@ -73,12 +95,21 @@ export function ReaderView({ page }: { page: ReaderPage }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-6 sm:px-6">
       <header className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
-        <Link
-          href="/books"
-          className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-        >
-          ← Perpustakaan
-        </Link>
+        <div className="flex items-center justify-between gap-4">
+          <Link
+            href="/books"
+            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            ← Perpustakaan
+          </Link>
+
+          <Link
+            href={`/books/${book.id}/glossary`}
+            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            Glosarium →
+          </Link>
+        </div>
 
         <h1 className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{book.title}</h1>
         {book.author && <p className="text-sm text-zinc-500">{book.author}</p>}
@@ -99,10 +130,31 @@ export function ReaderView({ page }: { page: ReaderPage }) {
           <div className="flex gap-1">
             <dt>Di layar:</dt>
             <dd className="tabular-nums">
-              #{pageWindow.from}–#{lastOnScreen ?? pageWindow.from}
+              #{pagination.from}–#{lastOnScreen ?? pagination.from}
+            </dd>
+          </div>
+          <div className="flex gap-1">
+            <dt>Halaman:</dt>
+            <dd className="tabular-nums">
+              {pagination.currentPage} / {pagination.totalPages}
             </dd>
           </div>
         </dl>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <GoToPageButton
+            label="↩ Ke posisi baca terakhir"
+            bookId={book.id}
+            targetPage={pageForIndex(progress.lastReadIndex + 1)}
+            currentPage={pagination.currentPage}
+          />
+          <GoToPageButton
+            label="↩ Ke batas terjemahan terakhir"
+            bookId={book.id}
+            targetPage={pageForIndex(progress.lastTranslatedIndex + 1)}
+            currentPage={pagination.currentPage}
+          />
+        </div>
       </header>
 
       <div className="sticky top-0 z-10 -mx-4 mb-2 flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-zinc-800 dark:bg-zinc-950/90">
@@ -141,53 +193,83 @@ export function ReaderView({ page }: { page: ReaderPage }) {
               )}
 
               <ParagraphBlock
+                bookId={book.id}
                 paragraph={paragraph}
                 viewMode={viewMode}
                 isRead={paragraph.orderIndex <= progress.lastReadIndex}
                 isMarking={markingIndex === paragraph.orderIndex}
                 onMarkRead={markRead}
+                onMarkUnread={markUnread}
               />
             </div>
           ))}
         </div>
       )}
 
-      <nav className="mt-8 flex items-center justify-between gap-4 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-        {pageWindow.prevFrom !== null ? (
-          <Link
-            href={`/books/${book.id}?from=${pageWindow.prevFrom}`}
-            className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            ← Sebelumnya
-          </Link>
-        ) : (
-          <span />
-        )}
-
+      <div className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
         {lastOnScreen !== undefined && lastOnScreen > progress.lastReadIndex && (
-          <button
-            type="button"
-            onClick={() => markRead(lastOnScreen)}
-            disabled={markingIndex !== null}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
-          >
-            {markingIndex === lastOnScreen
-              ? "Menyimpan…"
-              : `Tandai sudah dibaca sampai #${lastOnScreen}`}
-          </button>
+          <div className="mb-6 flex justify-center">
+            <button
+              type="button"
+              onClick={() => markRead(lastOnScreen)}
+              disabled={markingIndex !== null}
+              className="rounded-md cursor-pointer bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
+            >
+              {markingIndex === lastOnScreen
+                ? "Menyimpan…"
+                : `Tandai sudah dibaca sampai #${lastOnScreen}`}
+            </button>
+          </div>
         )}
 
-        {pageWindow.nextFrom !== null ? (
-          <Link
-            href={`/books/${book.id}?from=${pageWindow.nextFrom}`}
-            className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            Berikutnya →
-          </Link>
-        ) : (
-          <span />
-        )}
-      </nav>
+        <Pagination
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          getHref={(targetPage) => `/books/${book.id}?page=${targetPage}`}
+        />
+      </div>
     </div>
+  );
+}
+
+const SHORTCUT_BUTTON_BASE = "rounded-md border px-3 py-1.5 text-xs transition-colors";
+
+/**
+ * "Jump to my last read/translated position" shortcut. Plain navigation, not
+ * a mutation — no fetch, just `?page=N` — already there when the target page
+ * equals the current one is rendered as a real disabled `<button>`, since an
+ * `<a>` has no accessible disabled state (CLAUDE.md → UI & State Conventions).
+ */
+function GoToPageButton({
+  label,
+  bookId,
+  targetPage,
+  currentPage,
+}: {
+  label: string;
+  bookId: string;
+  targetPage: number;
+  currentPage: number;
+}) {
+  if (targetPage === currentPage) {
+    return (
+      <button
+        type="button"
+        disabled
+        aria-disabled="true"
+        className={`${SHORTCUT_BUTTON_BASE} cursor-not-allowed border-zinc-200 text-zinc-300 dark:border-zinc-800 dark:text-zinc-700`}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <Link
+      href={`/books/${bookId}?page=${targetPage}`}
+      className={`${SHORTCUT_BUTTON_BASE} border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900`}
+    >
+      {label}
+    </Link>
   );
 }

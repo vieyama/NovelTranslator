@@ -11,18 +11,17 @@ export default async function BookReaderPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ from?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const { id } = await params;
-  const { from } = await searchParams;
+  const { page: pageParam } = await searchParams;
 
-  // No `from` in the URL means "resume": getReaderPage falls back to
-  // lastReadIndex + 1.
-  const parsedFrom = from === undefined ? undefined : Number.parseInt(from, 10);
-  const requestedFrom =
-    parsedFrom !== undefined && Number.isFinite(parsedFrom) ? parsedFrom : undefined;
+  // No `page` in the URL means "resume": getReaderPage falls back to the page
+  // containing lastReadIndex + 1.
+  const parsedPage = pageParam === undefined ? undefined : Number.parseInt(pageParam, 10);
+  const requestedPage = parsedPage !== undefined && Number.isFinite(parsedPage) ? parsedPage : undefined;
 
-  const page = await getReaderPage(id, requestedFrom);
+  const page = await getReaderPage(id, requestedPage);
 
   if (!page) notFound();
 

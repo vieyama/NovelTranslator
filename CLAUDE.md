@@ -59,7 +59,71 @@ detail.
   separator). For MVP, only `claudeClient.ts` is needed — keep the interface in
   place so adding Gemini later doesn't require touching the translate route.
 - `src/app/api/` — thin route handlers; core logic lives in `src/lib/`.
-- Reader components go in `src/components/reader/`.
+- Reader components go in `src/components/reader/`; library-page components
+  (upload form, delete button) in `src/components/library/`.
+- Deleting a book (`DELETE /api/books/:id`) is the one action that destroys
+  translated text — it relies on `onDelete: Cascade` in the schema, and any UI
+  triggering it must confirm first with a warning that says so.
+- `src/lib/*-schema.ts` — types and constants shared by Server and Client
+  Components. These must never import Prisma (see below).
+
+## Server / Client Module Boundary
+
+Every module that touches Prisma, the filesystem, or an API key begins with
+`import "server-only"`:
+
+`db.ts`, `books.ts`, `reader.ts`, `glossary.ts`, and everything in
+`src/lib/translator/` except the pure `types.ts` / `parseResponse.ts`.
+
+**A Client Component importing a runtime value from one of those pulls
+better-sqlite3's native binding into the browser bundle.** Without the guard the
+build fails with `Module not found: Can't resolve 'fs'` pointing inside
+`node_modules`, nowhere near the real mistake — and `tsc` and `eslint` both pass,
+so only loading the page catches it. With the guard the build names the offending
+file directly.
+
+So: when a Client Component needs a type or constant from `src/lib/`, put it in
+a `*-schema.ts` module and re-export it from the server module. Adding a new
+server-side module? Start it with `import "server-only"`.
+
+**Running a plain-Node script that imports `src/lib/`** (seeds, one-off checks)
+requires `tsx --conditions=react-server …`. `server-only` only compiles away
+under that condition; without it the script throws "This module cannot be
+imported from a Client Component module", which is misleading — nothing is a
+Client Component, Node just doesn't set the condition Next does.
+
+## UI & State Conventions
+
+- **Generic, presentation-only components live at `src/components/` top level**
+  (`ProgressBar.tsx`, `Pagination.tsx`) — no domain knowledge (a book, a
+  paragraph), just props in, markup out, so they're reusable anywhere. Anything
+  that *does* know the domain goes in a feature subfolder (`components/reader/`,
+  `components/library/`, `components/glossary/`).
+- **Navigable state lives in the URL, not component state.** Which reader page
+  is showing is `?page=N` on `/books/[id]`; there is no `useState` duplicating
+  it. The server component re-derives everything from the URL + DB on every
+  navigation. This is what makes a page bookmarkable/shareable and removes a
+  whole class of "UI says one thing, data says another" bugs by construction.
+  Contrast with the reader's view-mode toggle, which is a *preference*, not
+  navigable state — that one is correctly in `localStorage` via
+  `useSyncExternalStore` (see `components/reader/types.ts`), not the URL.
+- **Responsive layout switches are CSS breakpoints (`sm:hidden` /
+  `hidden sm:flex`), never a client-side media query.** The server can't know
+  viewport width before hydration, so a JS-based switch either flashes the
+  wrong layout or forces a client-only render. Rendering both layouts and
+  toggling visibility with Tailwind breakpoints is the pattern already used for
+  view-mode-dependent paragraph layout (`ParagraphBlock.tsx`) and for
+  `Pagination.tsx`'s mobile/desktop variants.
+- **A disabled navigation control is a real `<button disabled>`, not a styled
+  `<a>`.** An anchor has no accessible disabled state — `aria-disabled` alone
+  on a still-clickable link is a trap for keyboard/AT users. When a link-shaped
+  control can't go anywhere (first page, last page, etc.), render a disabled
+  button instead of a dead or half-disabled link.
+- **Windowed rendering, not exhaustive rendering, for anything whose count
+  scales with the book.** Paragraphs are fetched one page at a time
+  (`READER_PAGE_SIZE`, Phase 4); page-*number* lists in `Pagination.tsx` are
+  bounded by sibling count, never by total page count. Before rendering a list
+  driven by book size, ask whether it needs the same treatment.
 
 ## Things to Be Careful About
 
@@ -70,9 +134,32 @@ detail.
   exactly match the number sent. If the AI returns a mismatched count (missing or
   extra separators), mark that batch as failed and do NOT update
   `lastTranslatedIndex` — better to retry than to corrupt or shift the data.
+- **`lastTranslatedIndex` is a recomputed watermark, not "end of the last
+  batch".** Translation isn't required to happen strictly in order — an
+  explicit `fromIndex` (SPEC.md §3.2, `TranslateFromHereButton`) can translate
+  ahead of a gap. So after every batch, `translateNextBatch.ts`'s
+  `advanceWatermark` re-derives the watermark from actual DB state ("last
+  index before the next untranslated paragraph"), rather than assuming the
+  batch just written is what moved it. If you touch this file, don't
+  reintroduce "watermark = end of this batch" — it would silently leave a
+  gap this codebase now allows misreported as the same as no gap at all.
 - **PDF parsing** (Phase 2) will be messy (headers/footers/page numbers get
   extracted along with the text). Don't assume it'll be clean on the first try —
   give the user a way to preview and clean up before committing to the DB.
+- **`themeColor` lives in a `viewport` export, not `metadata`.** This Next.js
+  version rejects `metadata.themeColor` with a build warning (moved to
+  `export const viewport: Viewport` / `generateViewport`, SPEC.md §3.5). Caught
+  by `npm run build`'s output, not `tsc`/`eslint` — another instance of "this
+  Next.js version has breaking changes vs. older docs," so check
+  `node_modules/next/dist/docs/` before trusting a remembered Metadata API
+  shape, the same way you would for anything else Next-specific.
+- **The service worker (`public/sw.js`) only registers in production
+  builds** (`RegisterServiceWorker.tsx` checks `NODE_ENV`). Registering it in
+  `next dev` too would cache hashed JS chunks that hot-reload then replaces
+  out from under it, serving stale bundles. If you add new static assets that
+  must always be network-fresh (rare for this app), they need an explicit
+  bypass in the fetch handler — everything same-origin and GET is cached
+  network-first by default.
 
 ## Common Commands
 
@@ -81,6 +168,29 @@ npx prisma migrate dev --name <name>   # after changing schema.prisma
 npx prisma studio                       # inspect local data
 npm run dev
 ```
+
+Deployment (VPS via Drone CI + Docker Compose, SPEC.md §7.1):
+
+```bash
+docker build --target builder -t novel-translator:builder-test .   # fast sanity check (no full image)
+docker compose up -d --build                                        # local end-to-end test
+docker compose logs migrate                                         # check this first if `app` never comes up
+```
+
+- **Runtime is Node (`node:20-slim`), not Bun** — Bun 1.3.x fatally crashes
+  (`Error::New napi_get_last_error_info`) loading `better-sqlite3`'s native
+  binding, confirmed on both macOS and Linux/arm64, confirmed as a Bun bug
+  (not a config issue) before switching back to Node. If a future Bun upgrade
+  claims to fix this, re-verify with a standalone script
+  (`new (require("better-sqlite3"))(":memory:")`) before touching the
+  Dockerfile — don't take a changelog's word for it, this one failed silently
+  right up until the native call itself.
+- **`.next/standalone` doesn't automatically ship every native module.**
+  `better-sqlite3` resolves its prebuilt binary via a path computed from
+  `process.platform`/`process.arch` at runtime, which Next's static
+  output-file tracer can miss. `outputFileTracingIncludes` in `next.config.ts`
+  force-includes it — if a future dependency has the same
+  prebuilt-binary-via-dynamic-path shape, it likely needs the same treatment.
 
 ## Definition of "Done" for a feature
 
