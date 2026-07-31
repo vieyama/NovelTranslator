@@ -265,8 +265,17 @@ Notes:
       rate limit / error)
 - [ ] Background pre-translation (translate ahead while reading)
 - [ ] Export translated book to `.txt`
-- [ ] Book upload UI (still `curl`-only as of Phase 4 — low priority since it's
-      a personal-use app, but worth adding for convenience)
+- [x] Book upload UI + delete book (pulled forward on user request — the app
+      previously opened straight into existing books with no way to add or
+      remove one from the UI)
+      - `UploadBookForm` on `/books`: file (.txt/.epub) + optional title/author,
+        posts to the existing `POST /api/books`; empty fields are omitted so the
+        filename-fallback title still applies.
+      - `DELETE /api/books/:id` implemented (was planned in SPEC.md §4 since
+        Phase 1 but never built). Cascade removes paragraphs, progress, and
+        glossary; verified zero orphan rows afterwards. **Deleting destroys the
+        translated text too**, so the button's confirm dialog says exactly that.
+      - Delete again / unknown id → 404.
 
 ## Non-Negotiables (recheck before marking any phase done)
 

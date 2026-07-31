@@ -59,7 +59,11 @@ detail.
   separator). For MVP, only `claudeClient.ts` is needed — keep the interface in
   place so adding Gemini later doesn't require touching the translate route.
 - `src/app/api/` — thin route handlers; core logic lives in `src/lib/`.
-- Reader components go in `src/components/reader/`.
+- Reader components go in `src/components/reader/`; library-page components
+  (upload form, delete button) in `src/components/library/`.
+- Deleting a book (`DELETE /api/books/:id`) is the one action that destroys
+  translated text — it relies on `onDelete: Cascade` in the schema, and any UI
+  triggering it must confirm first with a warning that says so.
 - `src/lib/*-schema.ts` — types and constants shared by Server and Client
   Components. These must never import Prisma (see below).
 

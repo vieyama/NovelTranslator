@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { ProgressBar } from "@/components/ProgressBar";
+import { DeleteBookButton } from "@/components/library/DeleteBookButton";
+import { UploadBookForm } from "@/components/library/UploadBookForm";
 import { listBooksWithProgress } from "@/lib/books";
 
 /** Library view (SPEC.md §3.4). Always reads live progress from the DB. */
@@ -18,12 +20,16 @@ export default async function BooksPage() {
         {books.length} buku · progres tersimpan otomatis per paragraf.
       </p>
 
+      <div className="mt-6">
+        <UploadBookForm />
+      </div>
+
       {books.length === 0 ? (
         <div className="mt-10 rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
           <p className="text-zinc-600 dark:text-zinc-400">Belum ada buku.</p>
           <p className="mt-2 text-sm text-zinc-500">
-            Unggah novel <code className="font-mono">.txt</code> lewat{" "}
-            <code className="font-mono">POST /api/books</code> (form UI menyusul).
+            Unggah novel <code className="font-mono">.txt</code> atau{" "}
+            <code className="font-mono">.epub</code> lewat form di atas untuk mulai.
           </p>
         </div>
       ) : (
@@ -84,6 +90,10 @@ export default async function BooksPage() {
                       Lanjut menerjemahkan
                     </Link>
                   )}
+
+                  <span className="ml-auto">
+                    <DeleteBookButton bookId={book.id} title={book.title} />
+                  </span>
                 </div>
               </li>
             );

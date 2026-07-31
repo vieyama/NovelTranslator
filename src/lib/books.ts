@@ -7,7 +7,7 @@ import { EpubParseError, parse as parseEpub } from "@/lib/parser/epub";
 import { parse as parseTxt } from "@/lib/parser/txt";
 import type { ParsedParagraph } from "@/lib/parser/types";
 
-/** MVP supports .txt only; epub/pdf land in Phase 6 (TASKS.md). */
+/** Formats with a working parser; pdf lands later in Phase 7 (TASKS.md). */
 const SUPPORTED_FORMATS = ["txt", "epub"] as const;
 type SupportedFormat = (typeof SUPPORTED_FORMATS)[number];
 
@@ -91,6 +91,28 @@ export async function createBookFromUpload({ file, title, author }: CreateBookIn
 
     return book;
   });
+}
+
+/**
+ * Deletes a book and everything hanging off it (SPEC.md §4).
+ *
+ * Paragraphs, progress, and glossary terms go with it via `onDelete: Cascade`
+ * (schema.prisma) — verified in Phase 2 to leave no orphan rows. Translated
+ * text is destroyed too; this is irreversible, so the UI must confirm first.
+ */
+export async function deleteBook(bookId: string): Promise<{ title: string }> {
+  const book = await prisma.book.findUnique({
+    where: { id: bookId },
+    select: { id: true, title: true },
+  });
+
+  if (!book) {
+    throw new BookImportError(`Book ${bookId} not found.`, 404);
+  }
+
+  await prisma.book.delete({ where: { id: book.id } });
+
+  return { title: book.title };
 }
 
 export interface BookSummary {

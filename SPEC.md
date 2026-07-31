@@ -108,6 +108,14 @@ Design notes:
 ### 3.4 Library View
 - List of all books, progress bar (`lastTranslatedIndex / totalParagraphs`),
   "Continue reading" / "Continue translating" buttons.
+- **Upload form** at the top of the page (`UploadBookForm`): file
+  (`.txt`/`.epub`) plus optional title/author, posting to `POST /api/books`.
+  Title falls back to the filename when left empty.
+- **Delete button** per book (`DeleteBookButton`) calling
+  `DELETE /api/books/:id`. Deletion cascades to paragraphs, progress, and
+  glossary terms — including all translated text — so the UI confirms with an
+  explicit warning before calling it. Irreversible by design; there is no
+  archive state.
 
 ## 4. API Routes (planned)
 
@@ -118,7 +126,7 @@ Design notes:
 | GET    | /api/books/:id               | Book detail + paragraphs (paginated)       |
 | POST   | /api/translate               | Translate the next batch                   |
 | PATCH  | /api/books/:id/progress      | Manually update lastReadIndex              |
-| DELETE | /api/books/:id               | Delete a book                              |
+| DELETE | /api/books/:id               | Delete a book (built — cascades to paragraphs/progress/glossary) |
 | GET    | /api/books/:id/glossary      | List the book's glossary terms             |
 | POST   | /api/books/:id/glossary      | Add a glossary term                        |
 | PATCH  | /api/books/:id/glossary/:termId | Edit a glossary term                    |
