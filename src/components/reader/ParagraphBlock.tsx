@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReaderParagraph } from "@/lib/reader";
+// From the schema module, not `@/lib/reader` — that one imports Prisma.
+import type { ReaderParagraph } from "@/lib/reader-schema";
 
 import type { ViewMode } from "./types";
 

@@ -1,3 +1,7 @@
+// Server-only: importing this from a Client Component would pull secrets
+// and/or native bindings into the browser bundle. Prisma client + native better-sqlite3 binding.
+import "server-only";
+
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "@/generated/prisma/client";
 

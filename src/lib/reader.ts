@@ -1,4 +1,9 @@
+// Server-only: importing this from a Client Component would pull secrets
+// and/or native bindings into the browser bundle. Prisma.
+import "server-only";
+
 import { prisma } from "@/lib/db";
+import type { ReaderPage, ReaderParagraph } from "@/lib/reader-schema";
 
 /**
  * Queries backing the reader view (SPEC.md §3.3).
@@ -10,33 +15,7 @@ import { prisma } from "@/lib/db";
 /** Paragraphs rendered per screen; long novels are windowed, not fully loaded. */
 export const READER_PAGE_SIZE = 30;
 
-export interface ReaderParagraph {
-  orderIndex: number;
-  originalText: string;
-  translatedText: string | null;
-}
-
-export interface ReaderPage {
-  book: {
-    id: string;
-    title: string;
-    author: string | null;
-    totalParagraphs: number;
-  };
-  progress: {
-    lastReadIndex: number;
-    lastTranslatedIndex: number;
-  };
-  paragraphs: ReaderParagraph[];
-  window: {
-    from: number;
-    prevFrom: number | null;
-    nextFrom: number | null;
-  };
-  /** First paragraph in the whole book still awaiting translation, if any. */
-  firstUntranslatedIndex: number | null;
-  translatedCount: number;
-}
+export type { ReaderPage, ReaderParagraph };
 
 /**
  * Loads one screen of a book, defaulting to `lastReadIndex + 1` so opening the

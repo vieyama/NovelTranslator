@@ -4,7 +4,8 @@ import { useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import type { ReaderPage } from "@/lib/reader";
+// From the schema module, not `@/lib/reader` — that one imports Prisma.
+import type { ReaderPage } from "@/lib/reader-schema";
 
 import { ParagraphBlock } from "./ParagraphBlock";
 import { TranslateBatchButton } from "./TranslateBatchButton";
@@ -73,12 +74,21 @@ export function ReaderView({ page }: { page: ReaderPage }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-6 sm:px-6">
       <header className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
-        <Link
-          href="/books"
-          className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-        >
-          ← Perpustakaan
-        </Link>
+        <div className="flex items-center justify-between gap-4">
+          <Link
+            href="/books"
+            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            ← Perpustakaan
+          </Link>
+
+          <Link
+            href={`/books/${book.id}/glossary`}
+            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            Glosarium →
+          </Link>
+        </div>
 
         <h1 className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{book.title}</h1>
         {book.author && <p className="text-sm text-zinc-500">{book.author}</p>}

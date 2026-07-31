@@ -1,3 +1,7 @@
+// Server-only: importing this from a Client Component would pull secrets
+// and/or native bindings into the browser bundle. Reads TRANSLATION_RULES.md from disk.
+import "server-only";
+
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
