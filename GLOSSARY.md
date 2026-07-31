@@ -52,6 +52,24 @@ Categories should mirror the naming rules in `TRANSLATION_RULES.md`
 (character/place/organization/race names untranslated; unique skills/items
 untranslated; generic items translated; honorifics kept).
 
+## Implementation (as built)
+
+- **Editor**: `/books/:id/glossary`, linked from the reader header.
+- **API**: `GET`/`POST /api/books/:id/glossary`, `PATCH`/`DELETE
+  /api/books/:id/glossary/:termId`. `PATCH` only touches the fields present in
+  the body, so `{"translation": null}` clears a translation without wiping the
+  note. A duplicate term returns 409.
+- **"Keep unchanged"** is stored as `translation: null` and shown in the UI as
+  *biarkan apa adanya*.
+- **Injection**: `src/lib/translator/prompt.ts` renders the terms into
+  `{{glossary_terms}}` for **both** providers — the system prompt Claude and
+  Gemini receive is byte-identical, built once from `TRANSLATION_RULES.md`.
+  There is no second copy of the rules in either client.
+- **Code boundary**: `src/lib/glossary.ts` imports Prisma and is `server-only`.
+  The editor is a Client Component, so it imports categories and types from
+  `src/lib/glossary-schema.ts` instead. See SPEC.md §4.1 — importing the wrong
+  one breaks the browser bundle in a way `tsc` and `eslint` do not catch.
+
 ## Workflow
 
 1. While reading/translating, whenever a recurring proper noun or invented term

@@ -68,7 +68,14 @@ Design notes:
 - User uploads a file (`.txt`, `.epub`, or `.pdf`).
 - The parser splits it into paragraphs:
   - **txt**: split by double newline (`\n\n`), trim whitespace.
-  - **epub**: parse HTML per chapter, take `<p>` tags as paragraphs, strip tags.
+  - **epub** (built): unzip, read `META-INF/container.xml` → the OPF package,
+    then walk the OPF **spine** for reading order. Zip entry order is arbitrary
+    and would scramble the book, so it is never used. Each spine document
+    becomes one `chapterIndex`. Blocks taken as paragraphs are `<p>`,
+    `<h1>`–`<h6>` and `<blockquote>` — headings are included because chapter
+    titles are text the reader wants, a small widening of the original "`<p>`
+    tags only" rule. Documents using no block tags fall back to splitting on
+    `</div>`/`<br>`. Entities are decoded and whitespace collapsed.
   - **pdf**: extract text per page, then heuristic paragraph-splitting (blank
     lines / indentation), needs cleanup for header/footer/page-number noise.
 - Save all paragraphs to the DB with a sequential `orderIndex`.
@@ -112,6 +119,35 @@ Design notes:
 | POST   | /api/translate               | Translate the next batch                   |
 | PATCH  | /api/books/:id/progress      | Manually update lastReadIndex              |
 | DELETE | /api/books/:id               | Delete a book                              |
+| GET    | /api/books/:id/glossary      | List the book's glossary terms             |
+| POST   | /api/books/:id/glossary      | Add a glossary term                        |
+| PATCH  | /api/books/:id/glossary/:termId | Edit a glossary term                    |
+| DELETE | /api/books/:id/glossary/:termId | Delete a glossary term                  |
+
+### 4.1 Server / Client module boundary
+
+Reader and glossary pages are Server Components that query Prisma directly
+through `src/lib/`, so not every read needs an API route. That makes one mistake
+easy to commit and hard to diagnose:
+
+> **A Client Component must never import a runtime value from a module that
+> imports Prisma.** Doing so pulls better-sqlite3's native binding into the
+> browser bundle, and the build fails with `Module not found: Can't resolve
+> 'fs'` pointing deep inside `node_modules` — nowhere near the actual mistake.
+> `tsc` and `eslint` both pass in that state.
+
+Two rules keep it from recurring:
+
+1. Every module touching Prisma, the filesystem, or an API key starts with
+   `import "server-only"`. A bad import then fails the build with a message that
+   names the file and the reason.
+2. Types and constants a Client Component needs live in a **schema module** with
+   no Prisma import — `src/lib/glossary-schema.ts`, `src/lib/reader-schema.ts`.
+   The server module re-exports them so server code has a single import site.
+
+Note that `import type { … }` from a server module happens to be safe, since
+TypeScript erases it — but it reads identically to the unsafe form, so prefer
+the schema module in Client Components regardless.
 
 ## 5. Translation Prompt & Glossary
 
@@ -132,19 +168,28 @@ isn't blocked if one provider's free-tier limit is hit:
 
 ```ts
 // src/lib/translator/types.ts
+// Note: implemented shape (as of Phase 3) differs from earlier draft below —
+// this reflects what claudeClient.ts actually uses. geminiClient.ts (Phase 5)
+// must match this same shape.
 interface TranslationProvider {
-  translateBatch(promptText: string): Promise<string>;
+  translateBatch(request: { system: string; user: string }): Promise<{
+    text: string;
+    model: string;
+    usage?: unknown;
+  }>;
 }
 ```
 
-- `claudeClient.ts` — Anthropic API (default/primary)
-- `geminiClient.ts` — Google Gemini API (secondary/fallback)
+- `claudeClient.ts` — Anthropic API (implemented in Phase 3, currently the
+  working/tested provider)
+- `geminiClient.ts` — Google Gemini API (added in Phase 5 as a second provider,
+  same interface, selectable via `TRANSLATION_PROVIDER`)
 
 Both use the exact same prompt template from `TRANSLATION_RULES.md` — only the
 API call differs — so translation style doesn't depend on which provider handled
 a given batch. Provider selection is controlled via config (`.env.local`), with
 optional automatic fallback (try primary, fall back to secondary on rate-limit
-error) as a Phase 2 feature.
+error) as a later enhancement (Phase 7).
 
 ## 7. Configuration
 
@@ -152,7 +197,7 @@ error) as a Phase 2 feature.
 ```
 ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
-TRANSLATION_PROVIDER=anthropic   # "anthropic" | "gemini"
+TRANSLATION_PROVIDER=claude   # "claude" | "gemini"
 DEFAULT_MAX_CHARS=3000
 DATABASE_URL="file:./dev.db"
 ```
@@ -160,8 +205,8 @@ DATABASE_URL="file:./dev.db"
 ## 8. MVP Scope (Phase 1)
 
 1. Import `.txt` only, for now (easiest to parse).
-2. Manually-triggered batch translation ("Translate next batch" button), Claude
-   as the only provider — Gemini support comes in Phase 2.
+2. Manually-triggered batch translation ("Translate next batch" button), Gemini
+   as the provider used for testing.
 3. Simple reader: paragraph list + translated/not-translated status.
 4. Auto-resume for both read and translate position.
 
@@ -170,7 +215,8 @@ DATABASE_URL="file:./dev.db"
 - Support `.epub` and `.pdf`.
 - Side-by-side bilingual view.
 - Translate-ahead in the background (pre-translate a few batches so you never wait).
-- Add Gemini provider + automatic fallback when the primary provider's limit is hit.
+- Add Claude/Anthropic as a second provider + automatic fallback when the
+  primary provider's limit is hit.
 - Export translated output to a new `.txt`/`.epub` file.
 
 ## 10. Open Questions

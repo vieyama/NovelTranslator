@@ -60,6 +60,33 @@ detail.
   place so adding Gemini later doesn't require touching the translate route.
 - `src/app/api/` — thin route handlers; core logic lives in `src/lib/`.
 - Reader components go in `src/components/reader/`.
+- `src/lib/*-schema.ts` — types and constants shared by Server and Client
+  Components. These must never import Prisma (see below).
+
+## Server / Client Module Boundary
+
+Every module that touches Prisma, the filesystem, or an API key begins with
+`import "server-only"`:
+
+`db.ts`, `books.ts`, `reader.ts`, `glossary.ts`, and everything in
+`src/lib/translator/` except the pure `types.ts` / `parseResponse.ts`.
+
+**A Client Component importing a runtime value from one of those pulls
+better-sqlite3's native binding into the browser bundle.** Without the guard the
+build fails with `Module not found: Can't resolve 'fs'` pointing inside
+`node_modules`, nowhere near the real mistake — and `tsc` and `eslint` both pass,
+so only loading the page catches it. With the guard the build names the offending
+file directly.
+
+So: when a Client Component needs a type or constant from `src/lib/`, put it in
+a `*-schema.ts` module and re-export it from the server module. Adding a new
+server-side module? Start it with `import "server-only"`.
+
+**Running a plain-Node script that imports `src/lib/`** (seeds, one-off checks)
+requires `tsx --conditions=react-server …`. `server-only` only compiles away
+under that condition; without it the script throws "This module cannot be
+imported from a Client Component module", which is misleading — nothing is a
+Client Component, Node just doesn't set the condition Next does.
 
 ## Things to Be Careful About
 
