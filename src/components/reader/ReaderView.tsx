@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 // From the schema module, not `@/lib/reader` — that one imports Prisma.
 import type { ReaderPage } from "@/lib/reader-schema";
+import { Pagination } from "@/components/Pagination";
 
 import { ParagraphBlock } from "./ParagraphBlock";
 import { TranslateBatchButton } from "./TranslateBatchButton";
@@ -63,7 +64,7 @@ export function ReaderView({ page }: { page: ReaderPage }) {
     }
   }
 
-  const { book, progress, paragraphs, window: pageWindow } = page;
+  const { book, progress, paragraphs, pagination } = page;
 
   // Where the translate prompt belongs: the first untranslated paragraph that
   // is actually on screen.
@@ -109,7 +110,13 @@ export function ReaderView({ page }: { page: ReaderPage }) {
           <div className="flex gap-1">
             <dt>Di layar:</dt>
             <dd className="tabular-nums">
-              #{pageWindow.from}–#{lastOnScreen ?? pageWindow.from}
+              #{pagination.from}–#{lastOnScreen ?? pagination.from}
+            </dd>
+          </div>
+          <div className="flex gap-1">
+            <dt>Halaman:</dt>
+            <dd className="tabular-nums">
+              {pagination.currentPage} / {pagination.totalPages}
             </dd>
           </div>
         </dl>
@@ -162,42 +169,28 @@ export function ReaderView({ page }: { page: ReaderPage }) {
         </div>
       )}
 
-      <nav className="mt-8 flex items-center justify-between gap-4 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-        {pageWindow.prevFrom !== null ? (
-          <Link
-            href={`/books/${book.id}?from=${pageWindow.prevFrom}`}
-            className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            ← Sebelumnya
-          </Link>
-        ) : (
-          <span />
-        )}
-
+      <div className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
         {lastOnScreen !== undefined && lastOnScreen > progress.lastReadIndex && (
-          <button
-            type="button"
-            onClick={() => markRead(lastOnScreen)}
-            disabled={markingIndex !== null}
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
-          >
-            {markingIndex === lastOnScreen
-              ? "Menyimpan…"
-              : `Tandai sudah dibaca sampai #${lastOnScreen}`}
-          </button>
+          <div className="mb-6 flex justify-center">
+            <button
+              type="button"
+              onClick={() => markRead(lastOnScreen)}
+              disabled={markingIndex !== null}
+              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
+            >
+              {markingIndex === lastOnScreen
+                ? "Menyimpan…"
+                : `Tandai sudah dibaca sampai #${lastOnScreen}`}
+            </button>
+          </div>
         )}
 
-        {pageWindow.nextFrom !== null ? (
-          <Link
-            href={`/books/${book.id}?from=${pageWindow.nextFrom}`}
-            className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
-            Berikutnya →
-          </Link>
-        ) : (
-          <span />
-        )}
-      </nav>
+        <Pagination
+          currentPage={pagination.currentPage}
+          totalPages={pagination.totalPages}
+          getHref={(targetPage) => `/books/${book.id}?page=${targetPage}`}
+        />
+      </div>
     </div>
   );
 }

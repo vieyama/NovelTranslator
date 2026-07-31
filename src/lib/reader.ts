@@ -3,27 +3,36 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
-import type { ReaderPage, ReaderParagraph } from "@/lib/reader-schema";
+import {
+  READER_PAGE_SIZE,
+  fromForPage,
+  pageForIndex,
+  totalPagesFor,
+  type ReaderPage,
+  type ReaderParagraph,
+} from "@/lib/reader-schema";
 
 /**
  * Queries backing the reader view (SPEC.md §3.3).
  *
  * Position always comes from `orderIndex` — the reader resumes by index, never
- * by searching for remembered text (CLAUDE.md → Working Principles).
+ * by searching for remembered text (CLAUDE.md → Working Principles). Pages are
+ * fixed-size, `orderIndex`-aligned windows (see `reader-schema.ts`), so numeric
+ * pagination and auto-resume are both just different ways of picking a page.
  */
 
-/** Paragraphs rendered per screen; long novels are windowed, not fully loaded. */
-export const READER_PAGE_SIZE = 30;
-
+export { READER_PAGE_SIZE };
 export type { ReaderPage, ReaderParagraph };
 
 /**
- * Loads one screen of a book, defaulting to `lastReadIndex + 1` so opening the
- * reader with no query string resumes exactly where the user stopped.
+ * Loads one screen of a book. With no `requestedPage`, resumes on the page
+ * containing `lastReadIndex + 1` — opening the reader with a bare URL still
+ * lands where the user stopped, now expressed as a page instead of a raw
+ * index.
  */
 export async function getReaderPage(
   bookId: string,
-  requestedFrom?: number,
+  requestedPage?: number,
 ): Promise<ReaderPage | null> {
   const book = await prisma.book.findUnique({
     where: { id: bookId },
@@ -35,11 +44,10 @@ export async function getReaderPage(
   const lastReadIndex = book.progress?.lastReadIndex ?? -1;
   const lastTranslatedIndex = book.progress?.lastTranslatedIndex ?? -1;
 
-  const from = clamp(
-    requestedFrom ?? lastReadIndex + 1,
-    0,
-    Math.max(0, book.totalParagraphs - 1),
-  );
+  const totalPages = totalPagesFor(book.totalParagraphs, READER_PAGE_SIZE);
+  const defaultPage = pageForIndex(lastReadIndex + 1, READER_PAGE_SIZE);
+  const currentPage = clamp(requestedPage ?? defaultPage, 1, totalPages);
+  const from = fromForPage(currentPage, READER_PAGE_SIZE);
 
   const [paragraphs, firstUntranslated, translatedCount] = await Promise.all([
     prisma.paragraph.findMany({
@@ -56,8 +64,6 @@ export async function getReaderPage(
     prisma.paragraph.count({ where: { bookId, translatedText: { not: null } } }),
   ]);
 
-  const nextFrom = from + READER_PAGE_SIZE;
-
   return {
     book: {
       id: book.id,
@@ -67,11 +73,7 @@ export async function getReaderPage(
     },
     progress: { lastReadIndex, lastTranslatedIndex },
     paragraphs,
-    window: {
-      from,
-      prevFrom: from > 0 ? Math.max(0, from - READER_PAGE_SIZE) : null,
-      nextFrom: nextFrom < book.totalParagraphs ? nextFrom : null,
-    },
+    pagination: { currentPage, totalPages, pageSize: READER_PAGE_SIZE, from },
     firstUntranslatedIndex: firstUntranslated?.orderIndex ?? null,
     translatedCount,
   };

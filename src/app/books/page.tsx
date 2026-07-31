@@ -4,6 +4,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { DeleteBookButton } from "@/components/library/DeleteBookButton";
 import { UploadBookForm } from "@/components/library/UploadBookForm";
 import { listBooksWithProgress } from "@/lib/books";
+import { pageForIndex } from "@/lib/reader-schema";
 
 /** Library view (SPEC.md §3.4). Always reads live progress from the DB. */
 export const dynamic = "force-dynamic";
@@ -84,7 +85,7 @@ export default async function BooksPage() {
 
                   {hasUntranslated && (
                     <Link
-                      href={`/books/${book.id}?from=${continueTranslatingFrom}`}
+                      href={`/books/${book.id}?page=${pageForIndex(continueTranslatingFrom)}`}
                       className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
                     >
                       Lanjut menerjemahkan
