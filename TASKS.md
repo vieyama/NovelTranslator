@@ -6,6 +6,12 @@ per the "Definition of Done" in CLAUDE.md.
 
 ## Phase 0 — Project Setup ✅
 
+> **Superseded (Phase 7): datasource is now PostgreSQL, not SQLite.** Every
+> `better-sqlite3` / `file:./dev.db` mention below describes the DB engine as
+> it was from Phase 0 through most of Phase 7 — see the "Switch database to
+> PostgreSQL" entry near the end of Phase 7 for the change and why. Left
+> in place rather than rewritten, since this file is a sequential build log.
+
 - [x] Initialize Next.js (App Router, TypeScript) project
 - [x] Install & configure Tailwind CSS
 - [x] Install Prisma, configure SQLite datasource (`DATABASE_URL="file:./dev.db"`)
@@ -74,7 +80,10 @@ Notes:
 - `orderIndex` is assigned once, by the parser, and inserted verbatim — the API
   layer never recomputes or infers it.
 - Insert runs in one transaction, chunked at 500 rows (SQLite bound-parameter
-  limit). Verified with a 3000-paragraph upload: gapless order, no partial book.
+  limit — superseded by Phase 7's Postgres switch, whose parameter limit is
+  much higher, but the chunking is harmless under Postgres too, so the code
+  wasn't changed). Verified with a 3000-paragraph upload: gapless order, no
+  partial book.
 - Upload guards: `.txt` only (415), empty file (400), 20 MB cap (413), no
   paragraphs found (422), non-multipart body (400).
 - No upload UI yet — Phase 2 is API-only, so the manual test is a `curl` command.
@@ -230,9 +239,11 @@ Notes:
   and that an empty glossary still produces a sane prompt.
 - **`src/lib/glossary-schema.ts` exists for a reason**: `glossary.ts` imports
   Prisma, and a `"use client"` component importing a runtime value from it drags
-  better-sqlite3's native binding into the browser bundle (`Can't resolve 'fs'`).
-  `tsc` and `eslint` both pass in that state — only loading the page catches it.
-  Client components import categories/types from the schema module.
+  the native binding into the browser bundle (`Can't resolve 'fs'` at the time
+  — SQLite/better-sqlite3; now `Can't resolve 'net'`/`'tls'` since Phase 7's
+  Postgres switch, same underlying problem). `tsc` and `eslint` both pass in
+  that state — only loading the page catches it. Client components import
+  categories/types from the schema module.
 - **Hardened afterwards** so the same mistake can't be made silently again:
   - `import "server-only"` added to every Prisma / filesystem / API-key module
     (`db`, `books`, `reader`, `glossary`, and `translator/*` except the pure
@@ -420,7 +431,8 @@ Notes:
         caveat above.
 - [x] VPS deployment via Docker + Drone CI (ad hoc user request — adapted from
       the user's existing Drone CI / Nginx Proxy Manager pattern used for
-      other apps)
+      other apps) — **superseded by the Postgres-switch entry directly below**;
+      left in place as the record of what was tried first and why it changed.
       - Stripped Postgres/MinIO/SMTP/Google OAuth/`DATA_ENCRYPTION_MASTER_KEY`
         from the reference — none apply here (SQLite, no file storage beyond
         the DB, no auth by design). Kept the same pipeline shape (`write-env`
@@ -446,8 +458,56 @@ Notes:
         `TRANSLATION_PROVIDER` can be flipped without a code change.
       - **Not verified end-to-end** — the local `docker build` was slow enough
         that the user asked to skip it and report back from the actual VPS
-        deploy instead. SPEC.md §7.1 lists the three most likely failure
+        deploy instead. SPEC.md §7.2 lists the three most likely failure
         points to check first if the first Drone deploy fails.
+      - **What the user reported back from the real deploy, in order**:
+        1. `prisma generate` failed at build time — `RUN npx prisma generate`
+           was placed *before* the `ARG`/`ENV DATABASE_URL` lines in the
+           Dockerfile, so the config loader had nothing to resolve. Fixed by
+           reordering.
+        2. The rebuilt image still crashed at runtime: "Could not locate the
+           bindings file" for `better-sqlite3`, nested under
+           `@prisma/adapter-better-sqlite3/node_modules/` (a private copy,
+           since the adapter's own `better-sqlite3` dependency range didn't
+           match the project's top-level one). Root cause, found by inspecting
+           the copied directory inside the container: `--ignore-scripts` on
+           `npm ci` (added earlier to dodge issue #1 a different way) also
+           silently skipped `better-sqlite3`'s own install step — the one that
+           actually fetches/builds the native binary — leaving only source
+           files (`lib/`, `src/`, `binding.gyp`) with nothing to bind to.
+      - Both fixes verified locally afterward (`docker compose up` against a
+        real container, `/books` responding 200) before being superseded by
+        the Postgres switch below, which removes this entire class of problem.
+- [x] Switch database from SQLite to PostgreSQL (explicit user request, for
+      both dev and the VPS — Prisma's schema/migrations are tied to one
+      provider, so a split setup would mean hand-maintaining two migration
+      sets; not worth it here)
+      - `prisma/schema.prisma`: `provider = "postgresql"`. `src/lib/db.ts`:
+        `PrismaPg({ connectionString })` replaces `PrismaBetterSqlite3`.
+        `package.json`: `pg` + `@prisma/adapter-pg` (+ `@types/pg`) replace
+        `better-sqlite3` + `@prisma/adapter-better-sqlite3`.
+      - `prisma/migrations/` deleted and regenerated from scratch against a
+        real local Postgres (`prisma migrate dev --name init`) — SQLite and
+        Postgres SQL dialects aren't compatible, so the old migration
+        couldn't be carried over.
+      - This resolves every native-binding problem logged in the entry above,
+        as a side effect rather than a direct fix: `pg` is pure JS, so there's
+        nothing to compile, nothing for `--ignore-scripts` to silently skip,
+        and nothing for output-file tracing to miss. Dockerfile's `deps` stage
+        went back to `--ignore-scripts` (safe now — no install script needs
+        to run), and `next.config.ts`'s `outputFileTracingIncludes` was
+        removed entirely.
+      - `docker-compose.yml` gained a `postgres` service (matching the
+        original reference pattern this deployment was adapted from, per
+        SPEC.md §7.2), bound to `127.0.0.1` only (tighter than the reference —
+        nothing outside the Docker network needs to reach it). `migrate` now
+        gates on `postgres`'s healthcheck instead of just a shared volume.
+      - Verified end-to-end locally before handoff: `docker compose up`
+        against a real Postgres container, `migrate` applying cleanly, `app`
+        booting, and a full create → read → delete cycle through the real
+        API (upload a book, confirm it lists and its reader page renders,
+        delete it, confirm the cascade) — not just a page load.
+      - SPEC.md §7.1 documents the switch; §7.2 (deployment) updated to match.
 
 ## Non-Negotiables (recheck before marking any phase done)
 

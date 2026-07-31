@@ -208,7 +208,7 @@ separate "chapter" or "section" state to fall out of sync with.
 Scope is deliberately light: **cache pages already opened**, not a full
 offline-first rewrite. There's no client-side data layer (no IndexedDB copy of
 paragraphs) and no attempt to let the reader work on a page it has never
-visited — this app is still a Server Component reading Prisma/SQLite on every
+visited — this app is still a Server Component reading Prisma/Postgres on every
 request; offline support here is a resilience layer on top of that, not a
 replacement for it.
 
@@ -256,10 +256,11 @@ through `src/lib/`, so not every read needs an API route. That makes one mistake
 easy to commit and hard to diagnose:
 
 > **A Client Component must never import a runtime value from a module that
-> imports Prisma.** Doing so pulls better-sqlite3's native binding into the
-> browser bundle, and the build fails with `Module not found: Can't resolve
-> 'fs'` pointing deep inside `node_modules` — nowhere near the actual mistake.
-> `tsc` and `eslint` both pass in that state.
+> imports Prisma.** Doing so pulls in Prisma's `pg` driver, which needs Node's
+> raw TCP/TLS sockets — the browser bundle build then fails with
+> `Module not found: Can't resolve 'net'` (or `'tls'`), pointing deep inside
+> `node_modules` — nowhere near the actual mistake. `tsc` and `eslint` both
+> pass in that state.
 
 Two rules keep it from recurring:
 
@@ -324,57 +325,74 @@ ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
 TRANSLATION_PROVIDER=claude   # "claude" | "gemini"
 DEFAULT_MAX_CHARS=3000
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://user:password@localhost:5437/novel_translator?schema=public"
 ```
 
-### 7.1 VPS Deployment (Docker + Drone CI)
+Local dev Postgres runs via `docker compose up -d postgres`, exposed on host
+port 5437 (not 5432) to avoid clashing with a system-wide Postgres install.
+
+### 7.1 Database: PostgreSQL
+
+Switched from SQLite (`better-sqlite3` driver adapter) to Postgres
+(`@prisma/adapter-pg` + `pg`) at the user's explicit request, for both local
+dev and the VPS — Prisma's schema/migrations are tied to one provider, so a
+split (SQLite for dev, Postgres for prod) would mean maintaining two schema
+and migration sets by hand; not worth it here.
+
+- `prisma/schema.prisma`: `datasource db { provider = "postgresql" }`.
+- `src/lib/db.ts`: `new PrismaPg({ connectionString: process.env.DATABASE_URL })`
+  instead of `PrismaBetterSqlite3`. `pg.Pool` connects lazily on first query —
+  unlike `better-sqlite3`, which opens the file eagerly at construction — so a
+  merely-syntactically-valid `DATABASE_URL` is enough at build time (see
+  Dockerfile below).
+- Migrations were regenerated from scratch (`prisma/migrations/` deleted and
+  recreated with `prisma migrate dev`) — SQLite and Postgres SQL dialects
+  aren't compatible, so the old migration couldn't just be carried over.
+- This incidentally resolves every native-binding problem `better-sqlite3` was
+  causing (below) — `pg` is pure JS, nothing to compile or trace.
+
+### 7.2 VPS Deployment (Docker + Drone CI)
 
 `Dockerfile` + `docker-compose.yml` + `.drone.yml`, adapted from the user's
-existing Drone CI / Nginx Proxy Manager pattern used for other apps. Key
-differences from that reference pattern, and why:
+existing Drone CI / Nginx Proxy Manager pattern used for other apps (which
+uses Postgres + MinIO + SMTP + Google OAuth). Differences from that reference,
+and why:
 
-- **SQLite stays SQLite** — no Postgres service. Single-user personal app
-  (CLAUDE.md), so SQLite's concurrency limits don't apply; the one thing that
-  matters in a container is that the `.db` file lives on a **named volume**
-  (`sqlite_data:/app/data`), not the container's writable layer, so
-  `docker compose up -d --build` on every deploy doesn't wipe progress data.
-- **No MinIO, no SMTP, no Google OAuth, no `DATA_ENCRYPTION_MASTER_KEY`** —
-  this app has no file storage beyond the DB, no email flows, and explicitly
-  "No auth/session management needed" (CLAUDE.md). Access control for the
-  publicly-reachable VPS instance is basic auth at the reverse proxy (Nginx
-  Proxy Manager Access List), entirely outside this repo — the app itself is
-  unaware it's behind one.
-- **Runtime is Node.js, not Bun** — deliberately, not by default. Bun 1.3.x
-  (tested on both macOS and Linux/arm64) crashes with a fatal NAPI error
-  (`Error::New napi_get_last_error_info`) the moment `better-sqlite3`'s native
-  binding is loaded — confirmed to be a Bun bug (its own crash reporter says
-  so), not a config issue, before ruling it out. Since every DB call goes
-  through `@prisma/adapter-better-sqlite3` → `better-sqlite3`, this isn't a
-  narrow edge case; it would crash on the first request that touches the
-  database. Dockerfile uses `node:20-slim` instead of `oven/bun` for this app
-  only — everything else (Drone pipeline shape, Nginx Proxy Manager in front,
-  `docker compose down && up -d --build` deploy step) matches the reference.
-- **`migrate` is a one-shot service** (`npx prisma migrate deploy`), same
-  shape as the reference's Postgres migrate step, but simpler: no DB server to
-  health-check, just the same named volume mounted read/write before `app`
-  starts (`depends_on: condition: service_completed_successfully`).
+- **`postgres` service kept, everything else dropped.** No MinIO, no SMTP, no
+  Google OAuth, no `DATA_ENCRYPTION_MASTER_KEY` — this app has no file storage
+  beyond the DB, no email flows, and explicitly "No auth/session management
+  needed" (CLAUDE.md). Access control for the publicly-reachable VPS instance
+  is basic auth at the reverse proxy (Nginx Proxy Manager Access List),
+  entirely outside this repo — the app itself is unaware it's behind one.
+  `postgres`'s host port is bound to `127.0.0.1` only (unlike the reference),
+  since nothing outside the Docker network needs to reach it directly.
+- **Runtime is Node.js, not Bun** — was the default preference (matches the
+  user's other apps), reverted after testing: Bun 1.3.x (tested on both macOS
+  and Linux/arm64, before switching to Postgres) crashed with a fatal NAPI
+  error (`Error::New napi_get_last_error_info`) the moment `better-sqlite3`'s
+  native binding loaded — confirmed a genuine Bun bug (its own crash reporter
+  said so), not a config issue. Moot now that the driver is `pg` (pure JS), but
+  Node was already confirmed working and there was no reason to re-test Bun
+  against it.
+- **`migrate` is a one-shot service** (`npx prisma migrate deploy`), gated on
+  `postgres`'s healthcheck (`depends_on: condition: service_healthy`); `app`
+  in turn waits on `migrate` completing successfully — same shape as the
+  reference.
 - **Both `ANTHROPIC_API_KEY` and `GEMINI_API_KEY`** are wired as secrets, so
   `TRANSLATION_PROVIDER` can be flipped on the VPS (edit the Drone secret,
   redeploy) without touching code, matching §6's provider-agnostic design.
-- **`next.config.ts`**: `output: "standalone"` (self-contained
-  `.next/standalone`, no need to ship full `node_modules`) plus
-  `outputFileTracingIncludes` explicitly covering
-  `node_modules/better-sqlite3/**/*` — its prebuilt binaries are resolved via
-  a dynamically-computed path (per platform/arch), which static output-file
-  tracing can miss.
-- **Not yet verified end-to-end** (`docker compose up` against a real
-  container) — the local build was taking long enough that verification was
-  deferred to the actual VPS deploy rather than block on it here. If the first
-  Drone deploy fails, check in this order: (1) missing/wrong secret at
-  `drone/data/vieyama/novel-translator`, (2) `better-sqlite3`'s native binary
-  not present in `.next/standalone/node_modules` (the `outputFileTracingIncludes`
-  escape hatch above exists for exactly this), (3) `migrate` failing before
-  `app` ever starts (check its container logs specifically, not `app`'s).
+- **`next.config.ts`**: just `output: "standalone"` — no
+  `outputFileTracingIncludes` needed (that was specifically working around
+  `better-sqlite3`'s prebuilt-binary-via-dynamic-path shape; `pg` has no
+  equivalent problem).
+- **Verified end-to-end locally** before handoff: `docker compose up` against
+  a real Postgres container — `migrate` applies cleanly, `app` boots, and a
+  full create → read → delete cycle through the real API confirmed the `pg`
+  adapter works correctly (this is what caught two real bugs during
+  development: `RUN npx prisma generate` running before `DATABASE_URL` was
+  set in the Dockerfile, and `--ignore-scripts` on `npm ci` silently skipping
+  `better-sqlite3`'s own native-binary install step — both fixed and
+  re-verified before this section was written).
 
 ## 8. MVP Scope (Phase 1)
 

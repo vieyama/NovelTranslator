@@ -17,8 +17,8 @@ Related docs:
 
 Prisma 7 note: the datasource URL lives in `prisma.config.ts` (which loads
 `.env.local`), **not** in `schema.prisma`, and the client needs the
-`@prisma/adapter-better-sqlite3` driver adapter. See `.agents/skills/prisma-*`
-for the version-accurate API.
+`@prisma/adapter-pg` driver adapter (Postgres, SPEC.md §7.1). See
+`.agents/skills/prisma-*` for the version-accurate API.
 
 ## Project Context
 
@@ -38,13 +38,15 @@ detail.
 - This is a small, personal-scale project (1 user, local data). Don't over-engineer:
   - No auth/session management needed.
   - No multi-tenancy or row-level security needed.
-  - SQLite is enough; don't introduce Postgres/Docker unless explicitly asked.
+  - Postgres + Docker are in use (VPS deployment, SPEC.md §7.1/§7.2), at
+    explicit user request — don't take that as license to add other
+    infrastructure (queues, caches, etc.) without the same kind of ask.
 - Keep API keys and sensitive config in `.env.local`, never hardcoded.
 
 ## Tech Stack
 
 - Next.js App Router + TypeScript
-- Prisma + SQLite
+- Prisma + PostgreSQL
 - Tailwind CSS
 - Anthropic API (`@anthropic-ai/sdk`) for translation
 
@@ -76,11 +78,11 @@ Every module that touches Prisma, the filesystem, or an API key begins with
 `src/lib/translator/` except the pure `types.ts` / `parseResponse.ts`.
 
 **A Client Component importing a runtime value from one of those pulls
-better-sqlite3's native binding into the browser bundle.** Without the guard the
-build fails with `Module not found: Can't resolve 'fs'` pointing inside
-`node_modules`, nowhere near the real mistake — and `tsc` and `eslint` both pass,
-so only loading the page catches it. With the guard the build names the offending
-file directly.
+Prisma's `pg` driver (raw Node TCP/TLS sockets) into the browser bundle.**
+Without the guard the build fails with `Module not found: Can't resolve 'net'`
+(or `'tls'`) pointing inside `node_modules`, nowhere near the real mistake —
+and `tsc` and `eslint` both pass, so only loading the page catches it. With the
+guard the build names the offending file directly.
 
 So: when a Client Component needs a type or constant from `src/lib/`, put it in
 a `*-schema.ts` module and re-export it from the server module. Adding a new
@@ -169,7 +171,7 @@ npx prisma studio                       # inspect local data
 npm run dev
 ```
 
-Deployment (VPS via Drone CI + Docker Compose, SPEC.md §7.1):
+Deployment (VPS via Drone CI + Docker Compose, SPEC.md §7.1/§7.2):
 
 ```bash
 docker build --target builder -t novel-translator:builder-test .   # fast sanity check (no full image)
@@ -177,20 +179,24 @@ docker compose up -d --build                                        # local end-
 docker compose logs migrate                                         # check this first if `app` never comes up
 ```
 
-- **Runtime is Node (`node:20-slim`), not Bun** — Bun 1.3.x fatally crashes
+- **The datasource is Postgres (`@prisma/adapter-pg`), not SQLite.** It was
+  SQLite (`@prisma/adapter-better-sqlite3`) until switched at explicit user
+  request — partly because Bun 1.3.x fatally crashed
   (`Error::New napi_get_last_error_info`) loading `better-sqlite3`'s native
-  binding, confirmed on both macOS and Linux/arm64, confirmed as a Bun bug
-  (not a config issue) before switching back to Node. If a future Bun upgrade
-  claims to fix this, re-verify with a standalone script
-  (`new (require("better-sqlite3"))(":memory:")`) before touching the
-  Dockerfile — don't take a changelog's word for it, this one failed silently
-  right up until the native call itself.
-- **`.next/standalone` doesn't automatically ship every native module.**
-  `better-sqlite3` resolves its prebuilt binary via a path computed from
-  `process.platform`/`process.arch` at runtime, which Next's static
-  output-file tracer can miss. `outputFileTracingIncludes` in `next.config.ts`
-  force-includes it — if a future dependency has the same
-  prebuilt-binary-via-dynamic-path shape, it likely needs the same treatment.
+  binding (confirmed on macOS and Linux/arm64, confirmed a genuine Bun bug
+  before ruling it out), and switching the driver to `pg` (pure JS) sidesteps
+  that class of problem entirely rather than working around it. Runtime is
+  still Node (`node:20-slim`), which was already confirmed working — no
+  reason to re-test Bun against a driver that no longer has the issue.
+- **`prisma generate`'s config loader needs `DATABASE_URL` resolvable *before*
+  it runs, not just before `next build`.** Bit twice during the deployment
+  work: once by running `RUN npx prisma generate` before the `ARG`/`ENV
+  DATABASE_URL` lines in the Dockerfile (fixed by reordering), and once by
+  `--ignore-scripts` on `npm ci` silently skipping `better-sqlite3`'s own
+  native-binary install step (moot now — `pg` has no install-time compile
+  step at all, so `--ignore-scripts` is safe again). If a future dependency
+  needs its own install script to run, don't reach for `--ignore-scripts` in
+  the `deps` stage without checking what else it silently skips.
 
 ## Definition of "Done" for a feature
 

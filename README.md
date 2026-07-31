@@ -23,7 +23,7 @@ This app removes the manual steps above by:
 ## Tech Stack
 
 - **Next.js (App Router) + TypeScript** — UI reader & API routes
-- **SQLite** (via Prisma or better-sqlite3) — local storage, single file, no DB server needed
+- **PostgreSQL** (via Prisma + `pg`) — local dev via `docker compose up -d postgres`, same engine on the VPS
 - **Anthropic API / other AI provider** — translation engine
 - **Tailwind CSS** — fast styling
 
