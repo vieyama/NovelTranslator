@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 // From the schema module, not `@/lib/reader` — that one imports Prisma.
-import type { ReaderPage } from "@/lib/reader-schema";
+import { pageForIndex, type ReaderPage } from "@/lib/reader-schema";
 import { Pagination } from "@/components/Pagination";
 
 import { ParagraphBlock } from "./ParagraphBlock";
@@ -140,6 +140,21 @@ export function ReaderView({ page }: { page: ReaderPage }) {
             </dd>
           </div>
         </dl>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <GoToPageButton
+            label="↩ Ke posisi baca terakhir"
+            bookId={book.id}
+            targetPage={pageForIndex(progress.lastReadIndex + 1)}
+            currentPage={pagination.currentPage}
+          />
+          <GoToPageButton
+            label="↩ Ke batas terjemahan terakhir"
+            bookId={book.id}
+            targetPage={pageForIndex(progress.lastTranslatedIndex + 1)}
+            currentPage={pagination.currentPage}
+          />
+        </div>
       </header>
 
       <div className="sticky top-0 z-10 -mx-4 mb-2 flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-zinc-800 dark:bg-zinc-950/90">
@@ -214,5 +229,47 @@ export function ReaderView({ page }: { page: ReaderPage }) {
         />
       </div>
     </div>
+  );
+}
+
+const SHORTCUT_BUTTON_BASE = "rounded-md border px-3 py-1.5 text-xs transition-colors";
+
+/**
+ * "Jump to my last read/translated position" shortcut. Plain navigation, not
+ * a mutation — no fetch, just `?page=N` — already there when the target page
+ * equals the current one is rendered as a real disabled `<button>`, since an
+ * `<a>` has no accessible disabled state (CLAUDE.md → UI & State Conventions).
+ */
+function GoToPageButton({
+  label,
+  bookId,
+  targetPage,
+  currentPage,
+}: {
+  label: string;
+  bookId: string;
+  targetPage: number;
+  currentPage: number;
+}) {
+  if (targetPage === currentPage) {
+    return (
+      <button
+        type="button"
+        disabled
+        aria-disabled="true"
+        className={`${SHORTCUT_BUTTON_BASE} cursor-not-allowed border-zinc-200 text-zinc-300 dark:border-zinc-800 dark:text-zinc-700`}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <Link
+      href={`/books/${bookId}?page=${targetPage}`}
+      className={`${SHORTCUT_BUTTON_BASE} border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900`}
+    >
+      {label}
+    </Link>
   );
 }
