@@ -29,12 +29,15 @@ steps:
         from_secret: ANTHROPIC_API_KEY
       GEMINI_API_KEY:
         from_secret: GEMINI_API_KEY
+      DATABASE_URL:
+        from_secret: DATABASE_URL
     commands:
       - |
         cat > /drone/src/.env <<EOF
         POSTGRES_USER=$${POSTGRES_USER}
         POSTGRES_PASSWORD=$${POSTGRES_PASSWORD}
         POSTGRES_DB=$${POSTGRES_DB}
+        DATABASE_URL=$${DATABASE_URL}
         APP_BIND_ADDRESS=0.0.0.0
         APP_PORT=$${APP_PORT}
         TRANSLATION_PROVIDER=$${TRANSLATION_PROVIDER}
@@ -62,6 +65,13 @@ volumes:
   - name: docker-sock
     host:
       path: /var/run/docker.sock
+
+---
+kind: secret
+name: DATABASE_URL
+get:
+  path: drone/data/vieyama/novel-translator
+  name: DATABASE_URL
 
 ---
 kind: secret
