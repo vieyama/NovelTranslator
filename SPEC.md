@@ -105,6 +105,48 @@ Design notes:
 - If the paragraph the user wants to read hasn't been translated yet → a
   "Translate more" button triggers the next batch directly, without navigating away.
 
+#### 3.3.1 Pagination
+
+Paragraphs are split into **fixed-size pages** of `READER_PAGE_SIZE` (30)
+paragraphs each, aligned to `orderIndex` — page 1 is indexes 0–29, page 2 is
+30–59, and so on (`src/lib/reader-schema.ts`). This is the same `orderIndex`
+ordering used everywhere else in the app (progress, batching, glossary), so a
+page number never disagrees with reading or translation progress — there is no
+separate "chapter" or "section" state to fall out of sync with.
+
+- **URL is the source of truth**: the current page lives in `?page=N` on
+  `/books/[id]`, not in component state. Opening the reader with no `page`
+  resumes on the page containing `lastReadIndex + 1`; an out-of-range value
+  clamps to `[1, totalPages]`; a non-numeric value falls back to resume. This
+  makes the reader trivially bookmarkable/shareable and removes an entire class
+  of state-sync bugs by construction.
+- **Numeric pagination** (`src/components/Pagination.tsx`, generic and reusable
+  — it knows nothing about paragraphs or books): First (`«`) / Previous (`‹`) /
+  windowed page numbers with `…` ellipses / Next (`›`) / Last (`»`). The active
+  page has a distinct style and `aria-current="page"`. First/Previous are
+  disabled (real `<button disabled>`, not a dead link) on page 1; Next/Last are
+  disabled on the last page. Clicking a number jumps straight to that page.
+- **Responsive, mobile-first**: two layouts are rendered and toggled with CSS
+  breakpoints (`sm:hidden` / `hidden sm:flex`), not a client-side media query —
+  the server can't know viewport width ahead of hydration, so a JS-based switch
+  would either mismatch on first paint or require a client-only render. Mobile
+  shows a compact `‹ 9 [10] 11 ›` (current page ±1, no ellipsis, no First/Last);
+  desktop shows the full `« ‹ 1 … 8 9 [10] 11 12 … 35 › »`. All controls are at
+  least 44×44px (touch-friendly).
+- **Performance**: the page-number list is windowed by construction — its
+  length is bounded by the sibling count (≈9 items max), never by `totalPages`.
+  A 3000-paragraph, 100-page book still renders the same handful of buttons a
+  10-page book does. This is separate from paragraph windowing, which was
+  already true since Phase 4 (one page's worth of paragraphs fetched at a
+  time, never the whole book).
+- **Accessibility**: the control is a `<nav aria-label="Navigasi halaman">`
+  wrapping a `<ul>`/`<li>` list. Every First/Previous/Next/Last control has an
+  `aria-label`; every page number link has `aria-label="Ke halaman N"`; the
+  active page carries `aria-current="page"`; ellipses are
+  `aria-hidden="true"` and non-interactive. All controls are plain `<a>` (via
+  `next/link`) or `<button>` elements, so Tab/Enter/Space and focus-visible
+  styling work without any custom keyboard handling.
+
 ### 3.4 Library View
 - List of all books, progress bar (`lastTranslatedIndex / totalParagraphs`),
   "Continue reading" / "Continue translating" buttons.

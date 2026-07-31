@@ -140,8 +140,10 @@ Notes:
   `src/lib/reader.ts` rather than through a `GET /api/books/:id`, since server
   components can query directly.
 - Reader is windowed at 30 paragraphs (`READER_PAGE_SIZE`) with prev/next links;
-  a 3000-paragraph novel would be unusable rendered in full. `?from=` overrides
-  the resume position without changing it.
+  a 3000-paragraph novel would be unusable rendered in full. **Superseded below**
+  by the numeric pagination upgrade — navigation is now `?page=N` (1-based page
+  number), not `?from=` (a raw `orderIndex`); see the pagination entry further
+  down this phase and SPEC.md §3.3.1.
 - `lastReadIndex` may move backwards — re-reading an earlier chapter is normal.
   Only `lastTranslatedIndex` is monotonic.
 - View mode persists in `localStorage` via `useSyncExternalStore`. A
@@ -276,6 +278,40 @@ Notes:
         glossary; verified zero orphan rows afterwards. **Deleting destroys the
         translated text too**, so the button's confirm dialog says exactly that.
       - Delete again / unknown id → 404.
+- [x] Reader pagination upgrade (ad hoc user request — Previous/Next-only
+      navigation was unusable on long novels)
+      - [x] Numeric pagination: `src/components/Pagination.tsx`, a generic
+            First/Prev/[1 … 8 9 **10** 11 12 …]/Next/Last control with no
+            reader-specific knowledge (caller supplies `getHref`).
+      - [x] Windowed pagination: page-number list length is bounded by sibling
+            count (≈9 items), never by `totalPages` — verified a 100-page book
+            renders the same button count as a 10-page one. Unrelated to, and
+            in addition to, the paragraph windowing that's existed since Phase 4.
+      - [x] Responsive pagination: two layouts (mobile compact, desktop full),
+            toggled with `sm:hidden`/`hidden sm:flex`, not a JS media query —
+            avoids a hydration mismatch, since the server can't know viewport
+            width. All controls ≥44×44px.
+      - [x] Accessibility: `<nav aria-label>` + `<ul>/<li>`, `aria-current="page"`
+            on the active page, `aria-label` on every control, disabled ends are
+            real `<button disabled>` (an `<a>` has no accessible disabled
+            state), ellipses `aria-hidden`. Native `<a>`/`<button>` elements, so
+            keyboard Tab/Enter/Space and focus-visible work with no custom
+            handling.
+      - [x] Pagination state management: the URL (`?page=N`) is the only source
+            of truth — no component state duplicates it. `getReaderPage` now
+            takes `requestedPage` instead of `requestedFrom`;
+            `pageForIndex`/`fromForPage`/`totalPagesFor` (pure, in
+            `reader-schema.ts`) convert between an absolute `orderIndex` and a
+            page number wherever needed (the reader itself, and the library's
+            "Lanjut menerjemahkan" link).
+      - Verified: pure range-generator functions (31 checks: exact spec example
+        `1 … 8 9 10 11 12 … 35`, mobile `9 10 11`, boundary/edge cases) +
+        end-to-end against a live 320-paragraph/11-page test book (resume,
+        direct page jump, out-of-range clamp, non-numeric fallback, mark-read
+        keeping the same page, disabled-state placement) + screenshots at
+        desktop and 375px mobile widths.
+      - SPEC.md §3.3.1 is the source of truth for the behavior; see also
+        CLAUDE.md's new "Reusable UI Components" and "URL-Driven State" notes.
 
 ## Non-Negotiables (recheck before marking any phase done)
 

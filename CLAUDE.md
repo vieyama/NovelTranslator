@@ -92,6 +92,39 @@ under that condition; without it the script throws "This module cannot be
 imported from a Client Component module", which is misleading — nothing is a
 Client Component, Node just doesn't set the condition Next does.
 
+## UI & State Conventions
+
+- **Generic, presentation-only components live at `src/components/` top level**
+  (`ProgressBar.tsx`, `Pagination.tsx`) — no domain knowledge (a book, a
+  paragraph), just props in, markup out, so they're reusable anywhere. Anything
+  that *does* know the domain goes in a feature subfolder (`components/reader/`,
+  `components/library/`, `components/glossary/`).
+- **Navigable state lives in the URL, not component state.** Which reader page
+  is showing is `?page=N` on `/books/[id]`; there is no `useState` duplicating
+  it. The server component re-derives everything from the URL + DB on every
+  navigation. This is what makes a page bookmarkable/shareable and removes a
+  whole class of "UI says one thing, data says another" bugs by construction.
+  Contrast with the reader's view-mode toggle, which is a *preference*, not
+  navigable state — that one is correctly in `localStorage` via
+  `useSyncExternalStore` (see `components/reader/types.ts`), not the URL.
+- **Responsive layout switches are CSS breakpoints (`sm:hidden` /
+  `hidden sm:flex`), never a client-side media query.** The server can't know
+  viewport width before hydration, so a JS-based switch either flashes the
+  wrong layout or forces a client-only render. Rendering both layouts and
+  toggling visibility with Tailwind breakpoints is the pattern already used for
+  view-mode-dependent paragraph layout (`ParagraphBlock.tsx`) and for
+  `Pagination.tsx`'s mobile/desktop variants.
+- **A disabled navigation control is a real `<button disabled>`, not a styled
+  `<a>`.** An anchor has no accessible disabled state — `aria-disabled` alone
+  on a still-clickable link is a trap for keyboard/AT users. When a link-shaped
+  control can't go anywhere (first page, last page, etc.), render a disabled
+  button instead of a dead or half-disabled link.
+- **Windowed rendering, not exhaustive rendering, for anything whose count
+  scales with the book.** Paragraphs are fetched one page at a time
+  (`READER_PAGE_SIZE`, Phase 4); page-*number* lists in `Pagination.tsx` are
+  bounded by sibling count, never by total page count. Before rendering a list
+  driven by book size, ask whether it needs the same treatment.
+
 ## Things to Be Careful About
 
 - **Batching for translation**: when grouping paragraphs up to `maxChars`, never
