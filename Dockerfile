@@ -63,8 +63,8 @@ RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
 USER nextjs
 
-EXPOSE 5002
-ENV PORT=5002
+EXPOSE 3007
+ENV PORT=3007
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
