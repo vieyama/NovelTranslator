@@ -1,0 +1,48 @@
+name: ${COMPOSE_PROJECT_NAME:-novel-translator}
+
+# No postgres/minio/smtp/oauth here — this app is single-user with no auth
+# (CLAUDE.md), storing everything in one SQLite file. Access control lives
+# outside this file entirely, at the reverse proxy (Nginx Proxy Manager Access
+# List / basic auth) in front of whatever host port APP_PORT exposes.
+
+services:
+  migrate:
+    container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_migrate
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: file:/app/data/production.db
+    volumes:
+      - sqlite_data:/app/data
+    restart: on-failure
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_app
+    restart: unless-stopped
+    ports:
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3020}:5002"
+    environment:
+      DATABASE_URL: file:/app/data/production.db
+      TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-claude}
+      DEFAULT_MAX_CHARS: ${DEFAULT_MAX_CHARS:-3000}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      # Optional overrides (SPEC.md §7) — uncomment to set a non-default model:
+      # TRANSLATION_MODEL: claude-opus-5
+      # TRANSLATION_EFFORT: medium
+      # GEMINI_MODEL: gemini-flash-latest
+      NODE_ENV: production
+    volumes:
+      - sqlite_data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  sqlite_data:
