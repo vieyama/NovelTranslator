@@ -1,8 +1,12 @@
+// Server-only: importing this from a Client Component would pull secrets
+// and/or native bindings into the browser bundle. Prisma + API clients.
+import "server-only";
+
 import { prisma } from "@/lib/db";
 
-import { createClaudeProvider } from "./claudeClient";
 import { parseTranslationResponse } from "./parseResponse";
 import { buildPrompt } from "./prompt";
+import { resolveProvider } from "./provider";
 import { TranslationError, type TranslationProvider } from "./types";
 
 /**
@@ -23,6 +27,7 @@ const CANDIDATE_LIMIT = 1000;
 export interface TranslateNextBatchInput {
   bookId: string;
   maxChars?: number;
+  /** Defaults to whatever `TRANSLATION_PROVIDER` selects. */
   provider?: TranslationProvider;
 }
 
@@ -41,6 +46,8 @@ export interface TranslateNextBatchResult {
     lastReadIndex: number;
     totalParagraphs: number;
   };
+  /** Which provider handled the batch — `"claude"` or `"gemini"`. */
+  provider?: string;
   model?: string;
   usage?: { inputTokens: number; outputTokens: number };
 }
@@ -48,7 +55,7 @@ export interface TranslateNextBatchResult {
 export async function translateNextBatch({
   bookId,
   maxChars,
-  provider = createClaudeProvider(),
+  provider = resolveProvider(),
 }: TranslateNextBatchInput): Promise<TranslateNextBatchResult> {
   const effectiveMaxChars = resolveMaxChars(maxChars);
 
@@ -128,6 +135,7 @@ export async function translateNextBatch({
       lastReadIndex,
       totalParagraphs: book.totalParagraphs,
     },
+    provider: provider.id,
     model: response.model,
     usage: response.usage,
   };

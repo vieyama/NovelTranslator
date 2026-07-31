@@ -1,3 +1,4 @@
+import { resolveProvider } from "@/lib/translator/provider";
 import { translateNextBatch } from "@/lib/translator/translateNextBatch";
 import { TranslationError } from "@/lib/translator/types";
 
@@ -33,7 +34,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await translateNextBatch({ bookId: bookId.trim(), maxChars });
+    // Provider comes from TRANSLATION_PROVIDER; everything after this point is
+    // identical for Claude and Gemini.
+    const provider = resolveProvider();
+    const result = await translateNextBatch({ bookId: bookId.trim(), maxChars, provider });
 
     return Response.json(result);
   } catch (error) {
