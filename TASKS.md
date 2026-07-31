@@ -342,6 +342,29 @@ Notes:
         confirming the button renders once per untranslated paragraph.
       - SPEC.md §3.2 documents the new `fromIndex` behavior and the
         recomputed-watermark rule.
+- [x] Revert a read paragraph back to unread (ad hoc user request, follow-up
+      to the `fromIndex` one above)
+      - No backend change needed: `setLastReadIndex` already allowed moving
+        `lastReadIndex` backward (`reader.ts` already documented this as
+        intentional — "re-reading an earlier chapter is a normal thing to
+        do"). Purely a UI gap.
+      - `ParagraphBlock` gained an `onMarkUnread` control next to "Sudah
+        dibaca" on every read paragraph; `ReaderView`'s `markUnread(orderIndex)`
+        calls the same progress PATCH as `markRead`, just with
+        `orderIndex - 1`.
+      - Busy-state tracking (`markingIndex`) is keyed to the *clicked*
+        paragraph, not the value sent to the API — `markUnread(50)` sends
+        `lastReadIndex: 49` but still shows "Menyimpan…" on paragraph #50,
+        via a shared `updateLastReadIndex(newValue, markingKey)` helper.
+      - Since `lastReadIndex` is a single watermark, reverting paragraph N
+        also reverts everything after it (documented in SPEC.md §3.3) — the
+        same contiguity rule "mark read up to here" already has, just
+        backward. No confirm dialog: consistent with the rest of the app,
+        where only book deletion (destroys data) requires one.
+      - Verified: live PATCH against a 6-paragraph test book with
+        `lastReadIndex=4`, reverting paragraph #2 → `lastReadIndex` becomes 1
+        and the read/unread button counts flip from 5/1 to 2/4 exactly as
+        expected.
 
 ## Non-Negotiables (recheck before marking any phase done)
 

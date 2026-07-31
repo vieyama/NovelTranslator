@@ -124,6 +124,15 @@ right before that gap (or the last paragraph, if there is no gap). This means:
 - Page `/books/[id]`, renders paragraphs starting from `lastReadIndex + 1` (auto-resume).
 - Display toggle: **translated only** / **original only** / **side-by-side**.
 - As the user scrolls / clicks "mark read up to here", `lastReadIndex` is updated.
+- Every read paragraph also has a "mark unread" control next to its "Sudah
+  dibaca" label. `lastReadIndex` is a single watermark (like
+  `lastTranslatedIndex` in §3.2, but explicitly allowed to move backwards —
+  see `setLastReadIndex` in `reader.ts`), so reverting one paragraph reverts
+  it *and everything after it* to unread — there's no way to un-read a single
+  paragraph in the middle while keeping later ones marked read, by the same
+  logic that marking read is "up to here", not "just this one". The action
+  reuses the same `PATCH /api/books/:id/progress` endpoint, just with
+  `lastReadIndex` set to `orderIndex - 1` instead of `orderIndex`.
 - If the paragraph the user wants to read hasn't been translated yet → a
   "Translate more" button triggers the next batch directly, without navigating away.
 - Every untranslated paragraph also has its own "Terjemahkan dari sini" control
