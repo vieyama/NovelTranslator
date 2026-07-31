@@ -312,6 +312,36 @@ Notes:
         desktop and 375px mobile widths.
       - SPEC.md §3.3.1 is the source of truth for the behavior; see also
         CLAUDE.md's new "Reusable UI Components" and "URL-Driven State" notes.
+- [x] Explicit translate start index (`fromIndex`) (ad hoc user request — user
+      had read ahead to #180 while translation was stuck at #33 and asked
+      whether translation could jump to wherever they're reading instead of
+      only ever continuing in order)
+      - `POST /api/translate` accepts an optional `fromIndex`; `translateNextBatch`
+        anchors its pending-paragraph search there instead of at
+        `lastTranslatedIndex` when given.
+      - `lastTranslatedIndex` semantics changed from "always the end of the
+        just-written batch" to "last index before the next untranslated gap",
+        recomputed from actual DB state after every batch
+        (`advanceWatermark` in `translateNextBatch.ts`) — this is what lets a
+        later batch auto-close an earlier gap in one step, and what makes
+        translating out of order safe: nothing reading `lastTranslatedIndex`
+        elsewhere (progress bars, "Lanjut menerjemahkan") can end up claiming
+        an untranslated paragraph is done. `firstUntranslatedIndex` /
+        `translatedCount` were already plain queries, not watermark-derived,
+        so they needed no change.
+      - `TranslateFromHereButton` (new, `components/reader/`): per-paragraph
+        trigger next to every untranslated paragraph, self-contained like
+        `TranslateBatchButton` (own fetch/busy/error state, `router.refresh()`
+        on success) rather than routed through `ReaderView`'s state, matching
+        the existing per-control-owns-its-request pattern.
+      - Verified: 12 assertions against a stub `TranslationProvider` (no real
+        API calls) covering jump-ahead-leaves-gap, DB state after the jump,
+        gap-fill advancing the watermark past the whole now-contiguous
+        stretch in one step, done-state on a fully translated book, and
+        rejection of an out-of-range `fromIndex` — plus a live screenshot
+        confirming the button renders once per untranslated paragraph.
+      - SPEC.md §3.2 documents the new `fromIndex` behavior and the
+        recomputed-watermark rule.
 
 ## Non-Negotiables (recheck before marking any phase done)
 

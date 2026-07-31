@@ -83,10 +83,11 @@ Design notes:
 
 ### 3.2 Translate Batch
 - Endpoint: `POST /api/translate`
-- Input: `bookId`, `maxChars` (configurable default, e.g. 3000)
+- Input: `bookId`, `maxChars` (configurable default, e.g. 3000), `fromIndex` (optional)
 - Logic:
   1. Fetch paragraphs starting at `lastTranslatedIndex + 1` where
-     `translatedText IS NULL`.
+     `translatedText IS NULL` — or, if `fromIndex` was given, starting there
+     instead (see "Explicit start index" below).
   2. Group consecutive paragraphs up to `maxChars` without exceeding it (never
      split a paragraph mid-way).
   3. Send to the AI with a translation prompt (system prompt stored in
@@ -95,8 +96,29 @@ Design notes:
      to preserve a paragraph separator, e.g. `\n\n---\n\n`, so it can be split
      back reliably).
   5. Update `translatedText` for each paragraph + `translatedAt`.
-  6. Update `lastTranslatedIndex` to the last successfully translated index.
+  6. Recompute `lastTranslatedIndex` as "last index before the next
+     untranslated gap" (not simply "end of this batch" — see below).
 - Response: the newly translated paragraphs + the new index.
+
+**Explicit start index (`fromIndex`).** The reader isn't required to translate
+strictly in order. `fromIndex` starts the batch at that paragraph instead of
+`lastTranslatedIndex + 1`, so the reader can jump translation ahead to wherever
+they're reading (e.g. skip a stretch they don't need translated right now).
+Paragraphs between the old watermark and `fromIndex` are left untouched, not
+lost — `lastTranslatedIndex` simply stops representing "everything before this
+index is translated" and starts representing "translated *up to the first
+remaining gap*". Concretely, after every batch (explicit `fromIndex` or not),
+the watermark is recomputed by scanning forward from its current value for the
+first paragraph with `translatedText IS NULL`; the new watermark is the index
+right before that gap (or the last paragraph, if there is no gap). This means:
+- Translating out of order never desyncs anything the rest of the app reads
+  from `lastTranslatedIndex` — it just may not advance yet.
+- A later batch that happens to close a gap advances the watermark past the
+  whole newly-contiguous stretch in one step, not just past what that batch
+  itself translated.
+- `firstUntranslatedIndex` / `translatedCount` (used by the reader and library
+  progress bars) are plain existence/count queries, not watermark-derived, so
+  they're accurate regardless of translation order.
 
 ### 3.3 Reader View
 - Page `/books/[id]`, renders paragraphs starting from `lastReadIndex + 1` (auto-resume).
@@ -104,6 +126,11 @@ Design notes:
 - As the user scrolls / clicks "mark read up to here", `lastReadIndex` is updated.
 - If the paragraph the user wants to read hasn't been translated yet → a
   "Translate more" button triggers the next batch directly, without navigating away.
+- Every untranslated paragraph also has its own "Terjemahkan dari sini" control
+  (`TranslateFromHereButton`), which calls `POST /api/translate` with
+  `fromIndex` set to that paragraph — the reader-side entry point for §3.2's
+  explicit start index, for jumping translation ahead of a gap instead of only
+  ever continuing from the watermark.
 
 #### 3.3.1 Pagination
 
