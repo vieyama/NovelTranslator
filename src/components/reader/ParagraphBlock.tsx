@@ -3,6 +3,7 @@
 // From the schema module, not `@/lib/reader` — that one imports Prisma.
 import type { ReaderParagraph } from "@/lib/reader-schema";
 
+import { TranslateFromHereButton } from "./TranslateFromHereButton";
 import type { ViewMode } from "./types";
 
 /**
@@ -12,12 +13,14 @@ import type { ViewMode } from "./types";
  * first per TASKS.md Phase 4.
  */
 export function ParagraphBlock({
+  bookId,
   paragraph,
   viewMode,
   isRead,
   isMarking,
   onMarkRead,
 }: {
+  bookId: string;
   paragraph: ReaderParagraph;
   viewMode: ViewMode;
   isRead: boolean;
@@ -62,10 +65,13 @@ export function ParagraphBlock({
               {paragraph.translatedText}
             </p>
           ) : (
-            <p className="text-sm italic text-amber-700 dark:text-amber-400">
-              Belum diterjemahkan.
-              {viewMode === "translated" && " Ganti ke mode “Asli” untuk membaca teks sumbernya."}
-            </p>
+            <div>
+              <p className="text-sm italic text-amber-700 dark:text-amber-400">
+                Belum diterjemahkan.
+                {viewMode === "translated" && " Ganti ke mode “Asli” untuk membaca teks sumbernya."}
+              </p>
+              <TranslateFromHereButton bookId={bookId} orderIndex={paragraph.orderIndex} />
+            </div>
           ))}
       </div>
 

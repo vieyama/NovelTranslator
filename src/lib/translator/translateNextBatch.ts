@@ -27,6 +27,14 @@ const CANDIDATE_LIMIT = 1000;
 export interface TranslateNextBatchInput {
   bookId: string;
   maxChars?: number;
+  /**
+   * Translate starting at this paragraph instead of continuing from
+   * `lastTranslatedIndex`. Anything still untranslated between the watermark
+   * and this index is left untouched (not skipped forever — a later call,
+   * from either the watermark or another explicit index, fills it in and the
+   * watermark catches up automatically, see `advanceWatermark`).
+   */
+  fromIndex?: number;
   /** Defaults to whatever `TRANSLATION_PROVIDER` selects. */
   provider?: TranslationProvider;
 }
@@ -55,6 +63,7 @@ export interface TranslateNextBatchResult {
 export async function translateNextBatch({
   bookId,
   maxChars,
+  fromIndex,
   provider = resolveProvider(),
 }: TranslateNextBatchInput): Promise<TranslateNextBatchResult> {
   const effectiveMaxChars = resolveMaxChars(maxChars);
@@ -68,16 +77,36 @@ export async function translateNextBatch({
     throw new TranslationError(`Book ${bookId} not found.`, "provider_error", 404);
   }
 
+  if (
+    fromIndex !== undefined &&
+    (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex > book.totalParagraphs - 1)
+  ) {
+    throw new TranslationError(
+      `\`fromIndex\` must be an integer between 0 and ${book.totalParagraphs - 1}.`,
+      "provider_error",
+      400,
+    );
+  }
+
   const lastTranslatedIndex = book.progress?.lastTranslatedIndex ?? -1;
   const lastReadIndex = book.progress?.lastReadIndex ?? -1;
 
-  const { pending, resumeIndex } = await findPendingRun(bookId, lastTranslatedIndex);
+  // Normally the anchor is the watermark; an explicit `fromIndex` anchors the
+  // search there instead, so the run can start ahead of a still-untranslated gap.
+  const anchor = fromIndex !== undefined ? fromIndex - 1 : lastTranslatedIndex;
+  const pending = await findPendingRun(bookId, anchor);
 
   if (pending.length === 0) {
-    // Nothing to send. If the only thing ahead was already-translated text
-    // (e.g. seeded data), move the index over it — that's bookkeeping, not a
-    // claim about untranslated work.
-    const settledIndex = await syncProgress(bookId, resumeIndex, lastTranslatedIndex);
+    // Nothing to send from the anchor onward. If that's only true because
+    // paragraphs there were already translated out of order (seeded data, or
+    // an earlier explicit `fromIndex` batch), let the watermark catch up —
+    // that's bookkeeping, not a claim about untranslated work.
+    const settledIndex = await advanceWatermark(
+      prisma,
+      bookId,
+      lastTranslatedIndex,
+      book.totalParagraphs,
+    );
 
     return {
       done: true,
@@ -107,9 +136,8 @@ export async function translateNextBatch({
   }
 
   const translatedAt = new Date();
-  const lastIndexInBatch = batch[batch.length - 1].orderIndex;
 
-  await prisma.$transaction(async (tx) => {
+  const newWatermark = await prisma.$transaction(async (tx) => {
     for (const [position, paragraph] of batch.entries()) {
       await tx.paragraph.update({
         where: { id: paragraph.id },
@@ -117,10 +145,7 @@ export async function translateNextBatch({
       });
     }
 
-    await tx.readingProgress.update({
-      where: { bookId },
-      data: { lastTranslatedIndex: lastIndexInBatch },
-    });
+    return advanceWatermark(tx, bookId, lastTranslatedIndex, book.totalParagraphs);
   });
 
   return {
@@ -131,7 +156,7 @@ export async function translateNextBatch({
       translatedText: parsed.paragraphs[position],
     })),
     progress: {
-      lastTranslatedIndex: lastIndexInBatch,
+      lastTranslatedIndex: newWatermark,
       lastReadIndex,
       totalParagraphs: book.totalParagraphs,
     },
@@ -150,34 +175,31 @@ interface PendingParagraph {
 
 /**
  * Returns the first *contiguous* run of untranslated paragraphs after
- * `lastTranslatedIndex`, plus the index that run starts from.
+ * `anchor` (normally the watermark, but an explicit `fromIndex` anchors the
+ * search ahead of it instead — see `translateNextBatch`).
  *
- * Contiguity matters: `lastTranslatedIndex` is a single watermark, so it may
- * only advance across a block that is fully translated. Skipping over an
- * untranslated paragraph would strand it behind the watermark forever.
+ * Contiguity matters within the run itself: a paragraph already translated
+ * ends the run, since batching further paragraphs together with it would mean
+ * re-sending already-translated text.
  */
-async function findPendingRun(bookId: string, lastTranslatedIndex: number) {
+async function findPendingRun(bookId: string, anchor: number): Promise<PendingParagraph[]> {
   const candidates = await prisma.paragraph.findMany({
-    where: { bookId, orderIndex: { gt: lastTranslatedIndex } },
+    where: { bookId, orderIndex: { gt: anchor } },
     orderBy: { orderIndex: "asc" },
     take: CANDIDATE_LIMIT,
     select: { id: true, orderIndex: true, originalText: true, charCount: true, translatedText: true },
   });
 
-  let cursor = 0;
-  let resumeIndex = lastTranslatedIndex;
-
-  // Step over anything already translated sitting directly ahead of the watermark.
-  while (cursor < candidates.length && candidates[cursor].translatedText !== null) {
-    resumeIndex = candidates[cursor].orderIndex;
-    cursor += 1;
-  }
-
   const pending: PendingParagraph[] = [];
 
-  for (; cursor < candidates.length; cursor += 1) {
-    const candidate = candidates[cursor];
-    if (candidate.translatedText !== null) break;
+  for (const candidate of candidates) {
+    if (candidate.translatedText !== null) {
+      // Already translated: skip if it's sitting ahead of `anchor` (an
+      // explicit `fromIndex` may point at or before already-translated text),
+      // but never batch past it — that would mean re-sending translated text.
+      if (pending.length > 0) break;
+      continue;
+    }
 
     pending.push({
       id: candidate.id,
@@ -187,7 +209,7 @@ async function findPendingRun(bookId: string, lastTranslatedIndex: number) {
     });
   }
 
-  return { pending, resumeIndex };
+  return pending;
 }
 
 /**
@@ -214,20 +236,37 @@ export function groupIntoBatch(
   return batch;
 }
 
-/** Advances the watermark over already-translated paragraphs, if any. */
-async function syncProgress(
+/**
+ * Recomputes the watermark as "last index before the next untranslated gap",
+ * and persists it if it moved.
+ *
+ * This is what lets `lastTranslatedIndex` catch up over paragraphs translated
+ * out of order (via an explicit `fromIndex`, or seeded data): it doesn't
+ * assume the just-written batch is what advances the watermark — it always
+ * looks at actual DB state, so a later batch that happens to close an earlier
+ * gap advances the watermark past that whole now-contiguous stretch in one go.
+ * Pass a transaction client to read/write within the same transaction as the
+ * paragraph writes that produced the new state.
+ */
+async function advanceWatermark(
+  db: Pick<typeof prisma, "paragraph" | "readingProgress">,
   bookId: string,
-  resumeIndex: number,
   lastTranslatedIndex: number,
+  totalParagraphs: number,
 ): Promise<number> {
-  if (resumeIndex <= lastTranslatedIndex) return lastTranslatedIndex;
-
-  await prisma.readingProgress.update({
-    where: { bookId },
-    data: { lastTranslatedIndex: resumeIndex },
+  const nextGap = await db.paragraph.findFirst({
+    where: { bookId, orderIndex: { gt: lastTranslatedIndex }, translatedText: null },
+    orderBy: { orderIndex: "asc" },
+    select: { orderIndex: true },
   });
 
-  return resumeIndex;
+  const watermark = nextGap ? nextGap.orderIndex - 1 : totalParagraphs - 1;
+
+  if (watermark !== lastTranslatedIndex) {
+    await db.readingProgress.update({ where: { bookId }, data: { lastTranslatedIndex: watermark } });
+  }
+
+  return watermark;
 }
 
 function resolveMaxChars(requested?: number): number {

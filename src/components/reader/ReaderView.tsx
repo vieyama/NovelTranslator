@@ -158,6 +158,7 @@ export function ReaderView({ page }: { page: ReaderPage }) {
               )}
 
               <ParagraphBlock
+                bookId={book.id}
                 paragraph={paragraph}
                 viewMode={viewMode}
                 isRead={paragraph.orderIndex <= progress.lastReadIndex}
