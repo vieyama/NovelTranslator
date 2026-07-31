@@ -22,17 +22,17 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN npx prisma generate
-
 # DATABASE_URL just needs to be a syntactically valid `file:` path at build
-# time — `next build` instantiates the Prisma client (db.ts) while tracing
-# routes, and better-sqlite3 will happily create an empty file here. The real
-# path is injected at runtime via docker-compose, pointing at the mounted
-# volume instead.
+# time — `prisma generate`'s config loader requires it resolvable, and later
+# `next build` instantiates the Prisma client (db.ts) while tracing routes;
+# better-sqlite3 will happily create an empty file here. The real path is
+# injected at runtime via docker-compose, pointing at the mounted volume
+# instead. Must be set BEFORE `prisma generate`, not just before `next build`.
 ARG DATABASE_URL=file:./build.db
 ENV DATABASE_URL=${DATABASE_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 
+RUN npx prisma generate
 RUN npm run build
 
 
