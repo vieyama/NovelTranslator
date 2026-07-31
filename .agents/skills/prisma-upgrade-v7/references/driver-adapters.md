@@ -32,31 +32,31 @@ MongoDB should not follow this path. There is no published MongoDB `@prisma/adap
 ### PostgreSQL
 
 ```bash
-npm install @prisma/adapter-pg
+bun install @prisma/adapter-pg
 ```
 
 ### MySQL
 
 ```bash
-npm install @prisma/adapter-mariadb mariadb
+bun install @prisma/adapter-mariadb mariadb
 ```
 
 ### SQLite
 
 ```bash
-npm install @prisma/adapter-better-sqlite3
+bun install @prisma/adapter-better-sqlite3
 ```
 
 ### Prisma Postgres
 
 ```bash
-npm install @prisma/adapter-pg pg
+bun install @prisma/adapter-pg pg
 ```
 
 ### SQL Server
 
 ```bash
-npm install @prisma/adapter-mssql mssql
+bun install @prisma/adapter-mssql mssql
 ```
 
 ## Configuration

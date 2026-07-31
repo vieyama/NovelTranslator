@@ -45,12 +45,12 @@ Notes:
 
 Notes:
 - Migration `20260731054813_init`; `dev.db` sits at the project root (same path
-  the runtime adapter resolves, since both the CLI and `npm run dev` run from
+  the runtime adapter resolves, since both the CLI and `bun run dev` run from
   there).
 - Added `onDelete: Cascade` on `Paragraph`, `ReadingProgress` and `GlossaryTerm`
   so `DELETE /api/books/:id` (SPEC.md §4) doesn't strand rows. Not in the SPEC
   snippet — flag if you'd rather delete explicitly in the route.
-- `prisma/seed.ts` (`npm run db:seed`) is idempotent: it deletes the previous
+- `prisma/seed.ts` (`bun run db:seed`) is idempotent: it deletes the previous
   `[SEED] …` book first, so re-running never duplicates.
 - Seed data deliberately leaves paragraphs 2–5 untranslated with
   `lastTranslatedIndex=1`, `lastReadIndex=0`, so Phase 3's "resume from
@@ -269,7 +269,7 @@ Notes:
       - Malformed EPUB → `EpubParseError` → HTTP 422 with a readable message;
         `.txt` upload behaviour unchanged.
       - **Regression found and fixed while testing**: adding `import
-        "server-only"` broke `npm run db:seed`, because the guard only compiles
+        "server-only"` broke `bun run db:seed`, because the guard only compiles
         away under the `react-server` export condition, which plain Node does
         not set. Seed command is now
         `tsx --conditions=react-server prisma/seed.ts`; documented in CLAUDE.md.
@@ -415,8 +415,8 @@ Notes:
         hashed chunks fights `next dev`'s hot reload).
       - `public/offline.html`: static fallback shown for a navigation to a
         page that was never cached and the network is down.
-      - Verified: `tsc`/`eslint`/`npm run build` clean. Live test against a
-        production build (`npm run start`) with a persistent headless-Chrome
+      - Verified: `tsc`/`eslint`/`bun run build` clean. Live test against a
+        production build (`bun run start`) with a persistent headless-Chrome
         profile: warmed the cache by visiting `/books` then a book page, then
         killed the server entirely and reloaded — the book page rendered its
         real cached content offline, and a third, never-visited page (the
@@ -515,5 +515,5 @@ Notes:
 - [ ] A failed translate batch never advances `lastTranslatedIndex`
 - [ ] Progress survives a full app restart
 - [ ] No Client Component imports a runtime value from a Prisma-touching module
-      (SPEC.md §4.1). `tsc` and `eslint` do not catch this — run `npm run build`
+      (SPEC.md §4.1). `tsc` and `eslint` do not catch this — run `bun run build`
       and open the affected page before calling a UI phase done.

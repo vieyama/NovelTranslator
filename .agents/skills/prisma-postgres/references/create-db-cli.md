@@ -66,7 +66,7 @@ You can also use `create-db` programmatically in Node.js/Bun instead of shelling
 Install:
 
 ```bash
-npm install create-db
+bun install create-db
 # or
 bun add create-db
 ```

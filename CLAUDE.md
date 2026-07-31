@@ -151,7 +151,7 @@ Client Component, Node just doesn't set the condition Next does.
 - **`themeColor` lives in a `viewport` export, not `metadata`.** This Next.js
   version rejects `metadata.themeColor` with a build warning (moved to
   `export const viewport: Viewport` / `generateViewport`, SPEC.md §3.5). Caught
-  by `npm run build`'s output, not `tsc`/`eslint` — another instance of "this
+  by `bun run build`'s output, not `tsc`/`eslint` — another instance of "this
   Next.js version has breaking changes vs. older docs," so check
   `node_modules/next/dist/docs/` before trusting a remembered Metadata API
   shape, the same way you would for anything else Next-specific.
@@ -168,7 +168,7 @@ Client Component, Node just doesn't set the condition Next does.
 ```bash
 npx prisma migrate dev --name <name>   # after changing schema.prisma
 npx prisma studio                       # inspect local data
-npm run dev
+bun run dev
 ```
 
 Deployment (VPS via Drone CI + Docker Compose, SPEC.md §7.1/§7.2):

@@ -5,8 +5,8 @@ Generate and instantiate Prisma Client for Prisma's standard SQL provider workfl
 ## 1. Install dependencies
 
 ```bash
-npm install prisma --save-dev
-npm install @prisma/client
+bun install prisma --save-dev
+bun install @prisma/client
 ```
 
 ## 2. Add generator block

@@ -125,7 +125,7 @@ Extract the direct connection string from `data.endpoints.direct.connectionStrin
 1. Install dependencies:
 
 ```bash
-npm install prisma @prisma/client @prisma/adapter-pg pg dotenv
+bun install prisma @prisma/client @prisma/adapter-pg pg dotenv
 ```
 
 All five packages are required:

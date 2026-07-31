@@ -58,7 +58,7 @@ Use a driver adapter for the standard SQL workflow.
 
 1. Install adapter and driver:
    ```bash
-   npm install @prisma/adapter-better-sqlite3 better-sqlite3
+   bun install @prisma/adapter-better-sqlite3 better-sqlite3
    ```
 
 2. Instantiate Prisma Client with the adapter:
@@ -79,7 +79,7 @@ For edge compatibility or Turso:
 
 1. Install:
    ```bash
-   npm install @prisma/adapter-libsql @libsql/client
+   bun install @prisma/adapter-libsql @libsql/client
    ```
 
 2. Instantiate:

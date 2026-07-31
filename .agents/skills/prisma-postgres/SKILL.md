@@ -120,7 +120,7 @@ Auth options:
 Install and use:
 
 ```bash
-npm install @prisma/management-api-sdk
+bun install @prisma/management-api-sdk
 ```
 
 Use `createManagementApiClient` for existing tokens, or `createManagementApiSdk` for OAuth + token refresh.

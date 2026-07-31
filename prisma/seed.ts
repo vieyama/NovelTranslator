@@ -2,7 +2,7 @@
  * Seeds one dummy book so the data layer can be verified manually in
  * `npx prisma studio` (TASKS.md Phase 1).
  *
- * Run with: npm run db:seed
+ * Run with: bun run db:seed
  *
  * Idempotent — deletes any previous copy of the seed book first (paragraphs,
  * progress and glossary terms cascade), so it can be re-run freely.

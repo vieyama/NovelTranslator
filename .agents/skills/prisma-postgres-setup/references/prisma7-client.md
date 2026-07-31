@@ -5,7 +5,7 @@ Prisma 7 changed how PrismaClient connects to databases. The CLI (`prisma db pus
 ## Required packages
 
 ```bash
-npm install @prisma/client @prisma/adapter-pg pg
+bun install @prisma/client @prisma/adapter-pg pg
 ```
 
 - `@prisma/adapter-pg` — the Prisma adapter for the `pg` PostgreSQL driver

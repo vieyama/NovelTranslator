@@ -39,9 +39,9 @@ This app removes the manual steps above by:
 ## Quick Start (once scaffolding is done)
 
 ```bash
-npm install
+bun install
 npx prisma migrate dev
-npm run dev
+bun run dev
 ```
 
 ## Folder Structure (planned)

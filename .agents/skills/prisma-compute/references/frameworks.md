@@ -305,7 +305,7 @@ export default defineComputeConfig({
   app: {
     framework: "custom",
     build: {
-      command: "npm run build",
+      command: "bun run build",
       outputDirectory: "build",
       entrypoint: "handler.js",
     },

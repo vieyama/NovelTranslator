@@ -63,7 +63,7 @@ Use a driver adapter for the standard SQL workflow.
 
 1. Install adapter and driver:
    ```bash
-   npm install @prisma/adapter-mariadb mariadb
+   bun install @prisma/adapter-mariadb mariadb
    ```
 
 2. Instantiate Prisma Client with the adapter:

@@ -13,7 +13,7 @@ The SDK provides typed endpoint methods and removes boilerplate around auth and 
 ## Install
 
 ```bash
-npm install @prisma/management-api-sdk
+bun install @prisma/management-api-sdk
 ```
 
 ## Simple client (existing token)

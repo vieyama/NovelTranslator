@@ -17,7 +17,7 @@ You must manually load environment variables using `dotenv` or similar.
 ### 1. Install dotenv
 
 ```bash
-npm install dotenv
+bun install dotenv
 ```
 
 ### 2. Import in prisma.config.ts
@@ -53,7 +53,7 @@ export default defineConfig({
 ### Using dotenv-cli
 
 ```bash
-npm install -D dotenv-cli
+bun install -D dotenv-cli
 ```
 
 ```json

@@ -132,7 +132,7 @@ This provides type safety but does NOT load .env files automatically.
 Install and import dotenv:
 
 ```bash
-npm install dotenv
+bun install dotenv
 ```
 
 ```typescript
