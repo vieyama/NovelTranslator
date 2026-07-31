@@ -418,6 +418,36 @@ Notes:
         (`Service Worker/CacheStorage`) confirmed entries were written.
       - SPEC.md §3.5 is the source of truth for scope and the first-visit
         caveat above.
+- [x] VPS deployment via Docker + Drone CI (ad hoc user request — adapted from
+      the user's existing Drone CI / Nginx Proxy Manager pattern used for
+      other apps)
+      - Stripped Postgres/MinIO/SMTP/Google OAuth/`DATA_ENCRYPTION_MASTER_KEY`
+        from the reference — none apply here (SQLite, no file storage beyond
+        the DB, no auth by design). Kept the same pipeline shape (`write-env`
+        → `deploy` steps, Vault-backed secrets, `docker compose down && up -d
+        --build`).
+      - **Runtime decision reversed mid-task based on evidence, not
+        assumption**: user's default preference was Bun (matches their other
+        apps), but Bun 1.3.x fatally crashes loading `better-sqlite3`'s native
+        binding — verified on both macOS and Linux/arm64 via Docker before
+        concluding it's a genuine Bun bug, not a local config problem, then
+        confirmed the Node.js fallback with the user rather than silently
+        picking one. `Dockerfile` uses `node:20-slim`.
+      - `next.config.ts`: `output: "standalone"` +
+        `outputFileTracingIncludes` for `better-sqlite3` (prebuilt binary path
+        is computed dynamically per platform/arch — a static tracer can miss
+        it; belt-and-suspenders rather than assuming it's caught).
+      - `migrate` one-shot service (`prisma migrate deploy`) shares a named
+        SQLite volume with `app`, gated by
+        `depends_on: condition: service_completed_successfully` — same shape
+        as the reference's Postgres migrate step, minus the health-check
+        (no separate DB server to wait for).
+      - Both `ANTHROPIC_API_KEY` and `GEMINI_API_KEY` wired as secrets so
+        `TRANSLATION_PROVIDER` can be flipped without a code change.
+      - **Not verified end-to-end** — the local `docker build` was slow enough
+        that the user asked to skip it and report back from the actual VPS
+        deploy instead. SPEC.md §7.1 lists the three most likely failure
+        points to check first if the first Drone deploy fails.
 
 ## Non-Negotiables (recheck before marking any phase done)
 

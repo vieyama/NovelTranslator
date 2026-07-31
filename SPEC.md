@@ -327,6 +327,55 @@ DEFAULT_MAX_CHARS=3000
 DATABASE_URL="file:./dev.db"
 ```
 
+### 7.1 VPS Deployment (Docker + Drone CI)
+
+`Dockerfile` + `docker-compose.yml` + `.drone.yml`, adapted from the user's
+existing Drone CI / Nginx Proxy Manager pattern used for other apps. Key
+differences from that reference pattern, and why:
+
+- **SQLite stays SQLite** — no Postgres service. Single-user personal app
+  (CLAUDE.md), so SQLite's concurrency limits don't apply; the one thing that
+  matters in a container is that the `.db` file lives on a **named volume**
+  (`sqlite_data:/app/data`), not the container's writable layer, so
+  `docker compose up -d --build` on every deploy doesn't wipe progress data.
+- **No MinIO, no SMTP, no Google OAuth, no `DATA_ENCRYPTION_MASTER_KEY`** —
+  this app has no file storage beyond the DB, no email flows, and explicitly
+  "No auth/session management needed" (CLAUDE.md). Access control for the
+  publicly-reachable VPS instance is basic auth at the reverse proxy (Nginx
+  Proxy Manager Access List), entirely outside this repo — the app itself is
+  unaware it's behind one.
+- **Runtime is Node.js, not Bun** — deliberately, not by default. Bun 1.3.x
+  (tested on both macOS and Linux/arm64) crashes with a fatal NAPI error
+  (`Error::New napi_get_last_error_info`) the moment `better-sqlite3`'s native
+  binding is loaded — confirmed to be a Bun bug (its own crash reporter says
+  so), not a config issue, before ruling it out. Since every DB call goes
+  through `@prisma/adapter-better-sqlite3` → `better-sqlite3`, this isn't a
+  narrow edge case; it would crash on the first request that touches the
+  database. Dockerfile uses `node:20-slim` instead of `oven/bun` for this app
+  only — everything else (Drone pipeline shape, Nginx Proxy Manager in front,
+  `docker compose down && up -d --build` deploy step) matches the reference.
+- **`migrate` is a one-shot service** (`npx prisma migrate deploy`), same
+  shape as the reference's Postgres migrate step, but simpler: no DB server to
+  health-check, just the same named volume mounted read/write before `app`
+  starts (`depends_on: condition: service_completed_successfully`).
+- **Both `ANTHROPIC_API_KEY` and `GEMINI_API_KEY`** are wired as secrets, so
+  `TRANSLATION_PROVIDER` can be flipped on the VPS (edit the Drone secret,
+  redeploy) without touching code, matching §6's provider-agnostic design.
+- **`next.config.ts`**: `output: "standalone"` (self-contained
+  `.next/standalone`, no need to ship full `node_modules`) plus
+  `outputFileTracingIncludes` explicitly covering
+  `node_modules/better-sqlite3/**/*` — its prebuilt binaries are resolved via
+  a dynamically-computed path (per platform/arch), which static output-file
+  tracing can miss.
+- **Not yet verified end-to-end** (`docker compose up` against a real
+  container) — the local build was taking long enough that verification was
+  deferred to the actual VPS deploy rather than block on it here. If the first
+  Drone deploy fails, check in this order: (1) missing/wrong secret at
+  `drone/data/vieyama/novel-translator`, (2) `better-sqlite3`'s native binary
+  not present in `.next/standalone/node_modules` (the `outputFileTracingIncludes`
+  escape hatch above exists for exactly this), (3) `migrate` failing before
+  `app` ever starts (check its container logs specifically, not `app`'s).
+
 ## 8. MVP Scope (Phase 1)
 
 1. Import `.txt` only, for now (easiest to parse).

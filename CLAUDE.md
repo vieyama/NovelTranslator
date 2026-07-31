@@ -169,6 +169,29 @@ npx prisma studio                       # inspect local data
 npm run dev
 ```
 
+Deployment (VPS via Drone CI + Docker Compose, SPEC.md §7.1):
+
+```bash
+docker build --target builder -t novel-translator:builder-test .   # fast sanity check (no full image)
+docker compose up -d --build                                        # local end-to-end test
+docker compose logs migrate                                         # check this first if `app` never comes up
+```
+
+- **Runtime is Node (`node:20-slim`), not Bun** — Bun 1.3.x fatally crashes
+  (`Error::New napi_get_last_error_info`) loading `better-sqlite3`'s native
+  binding, confirmed on both macOS and Linux/arm64, confirmed as a Bun bug
+  (not a config issue) before switching back to Node. If a future Bun upgrade
+  claims to fix this, re-verify with a standalone script
+  (`new (require("better-sqlite3"))(":memory:")`) before touching the
+  Dockerfile — don't take a changelog's word for it, this one failed silently
+  right up until the native call itself.
+- **`.next/standalone` doesn't automatically ship every native module.**
+  `better-sqlite3` resolves its prebuilt binary via a path computed from
+  `process.platform`/`process.arch` at runtime, which Next's static
+  output-file tracer can miss. `outputFileTracingIncludes` in `next.config.ts`
+  force-includes it — if a future dependency has the same
+  prebuilt-binary-via-dynamic-path shape, it likely needs the same treatment.
+
 ## Definition of "Done" for a feature
 
 Before considering a feature done, make sure:
