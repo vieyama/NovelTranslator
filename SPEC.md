@@ -203,6 +203,37 @@ separate "chapter" or "section" state to fall out of sync with.
   explicit warning before calling it. Irreversible by design; there is no
   archive state.
 
+### 3.5 PWA / Offline Caching
+
+Scope is deliberately light: **cache pages already opened**, not a full
+offline-first rewrite. There's no client-side data layer (no IndexedDB copy of
+paragraphs) and no attempt to let the reader work on a page it has never
+visited — this app is still a Server Component reading Prisma/SQLite on every
+request; offline support here is a resilience layer on top of that, not a
+replacement for it.
+
+- **Installable**: `src/app/manifest.ts` (Next's file convention, auto-linked
+  into `<head>` — no manual `<link rel="manifest">`) + `public/icons/icon.svg`.
+  `viewport.themeColor` (not `metadata.themeColor` — moved in this Next.js
+  version, see `generateViewport` docs) and `metadata.appleWebApp` set the
+  status-bar/standalone-mode meta tags.
+- **Service worker** (`public/sw.js`, registered by
+  `RegisterServiceWorker.tsx`, **production builds only** — a service worker
+  caching hashed JS chunks fights `next dev`'s hot reload): every same-origin
+  **GET** response (navigations, Next's RSC fetches, static assets) is stored
+  network-first. If a later request for that exact URL fails, the last cached
+  response is served instead of a browser error page. Mutations
+  (POST/PATCH/DELETE — translate, mark-read, delete book) are never
+  intercepted; those need a live server by definition.
+- **First-visit-ever caveat** (standard service worker behavior, not a bug):
+  the page that triggers the *first* SW registration on a device is never
+  itself served from that registration — the SW isn't active yet when that
+  request goes out. Every page opened after that is cached normally,
+  including reopening that same first page later.
+- **Unvisited pages while offline** fall back to `public/offline.html`, a
+  static "you're offline and this page was never cached" page, rather than the
+  browser's default connection-error screen.
+
 ## 4. API Routes (planned)
 
 | Method | Path                        | Purpose                                   |

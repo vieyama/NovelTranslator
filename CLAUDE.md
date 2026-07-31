@@ -146,6 +146,20 @@ Client Component, Node just doesn't set the condition Next does.
 - **PDF parsing** (Phase 2) will be messy (headers/footers/page numbers get
   extracted along with the text). Don't assume it'll be clean on the first try —
   give the user a way to preview and clean up before committing to the DB.
+- **`themeColor` lives in a `viewport` export, not `metadata`.** This Next.js
+  version rejects `metadata.themeColor` with a build warning (moved to
+  `export const viewport: Viewport` / `generateViewport`, SPEC.md §3.5). Caught
+  by `npm run build`'s output, not `tsc`/`eslint` — another instance of "this
+  Next.js version has breaking changes vs. older docs," so check
+  `node_modules/next/dist/docs/` before trusting a remembered Metadata API
+  shape, the same way you would for anything else Next-specific.
+- **The service worker (`public/sw.js`) only registers in production
+  builds** (`RegisterServiceWorker.tsx` checks `NODE_ENV`). Registering it in
+  `next dev` too would cache hashed JS chunks that hot-reload then replaces
+  out from under it, serving stale bundles. If you add new static assets that
+  must always be network-fresh (rare for this app), they need an explicit
+  bypass in the fetch handler — everything same-origin and GET is cached
+  network-first by default.
 
 ## Common Commands
 

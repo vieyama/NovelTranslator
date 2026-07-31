@@ -383,6 +383,41 @@ Notes:
         viewing page 1 disables the translate shortcut. Screenshot confirms
         layout.
       - SPEC.md §3.3 documents both shortcuts.
+- [x] PWA / lightweight offline caching (ad hoc user request — user picked
+      the "cache pages already opened" scope out of three offered options,
+      not a full offline-first client-data rewrite)
+      - Installable: `src/app/manifest.ts` (Next file convention, auto-linked)
+        + `public/icons/icon.svg` (SVG-only, no PNG generation — Chrome/Edge
+        install works fine with `sizes: "any"`; iOS home-screen icon quality
+        is a known, accepted gap, not addressed here) + `src/app/icon.svg`
+        (favicon).
+      - Hit a real Next.js API-drift issue while wiring this up (matches the
+        class of thing CLAUDE.md warns about elsewhere): `metadata.themeColor`
+        is rejected by this Next.js version with a build warning — it moved to
+        a separate `viewport` export (confirmed via
+        `node_modules/next/dist/docs/.../generate-viewport.md` before fixing,
+        not guessed). `layout.tsx` now exports both `metadata` and `viewport`.
+      - `public/sw.js`: network-first-with-cache-fallback for every
+        same-origin GET (navigations, RSC fetches, static assets); mutations
+        (POST/PATCH/DELETE) are never intercepted. `RegisterServiceWorker.tsx`
+        registers it client-side, **production builds only** (a SW caching
+        hashed chunks fights `next dev`'s hot reload).
+      - `public/offline.html`: static fallback shown for a navigation to a
+        page that was never cached and the network is down.
+      - Verified: `tsc`/`eslint`/`npm run build` clean. Live test against a
+        production build (`npm run start`) with a persistent headless-Chrome
+        profile: warmed the cache by visiting `/books` then a book page, then
+        killed the server entirely and reloaded — the book page rendered its
+        real cached content offline, and a third, never-visited page (the
+        glossary) correctly showed `offline.html`. `/books` itself came back
+        as `offline.html` on the same run, which turned out to be expected,
+        not a bug: it was the very first page ever opened in that profile,
+        so the service worker wasn't active yet when *that* request went out
+        (standard SW behavior — the registering page is never covered by its
+        own registration; every visit after it is). Cache Storage on disk
+        (`Service Worker/CacheStorage`) confirmed entries were written.
+      - SPEC.md §3.5 is the source of truth for scope and the first-visit
+        caveat above.
 
 ## Non-Negotiables (recheck before marking any phase done)
 
