@@ -15,6 +15,7 @@ steps:
   - name: write-env
     image: alpine
     environment:
+      DATABASE_URL: file:./build.db
       APP_PORT:
         from_secret: APP_PORT
       TRANSLATION_PROVIDER:
