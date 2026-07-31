@@ -87,7 +87,7 @@ export function ParagraphBlock({
             type="button"
             onClick={() => onMarkRead(paragraph.orderIndex)}
             disabled={isMarking}
-            className="rounded text-zinc-400 opacity-0 transition-opacity hover:text-emerald-700 focus:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 group-hover:opacity-100 disabled:cursor-wait dark:hover:text-emerald-400"
+            className="rounded cursor-pointer text-zinc-400 opacity-0 transition-opacity hover:text-emerald-700 focus:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 group-hover:opacity-100 disabled:cursor-wait dark:hover:text-emerald-400"
           >
             {isMarking ? "Menyimpan…" : "Tandai sudah dibaca sampai sini"}
           </button>
