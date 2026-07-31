@@ -1,6 +1,6 @@
 import { BookImportError, createBookFromUpload, listBooksWithProgress } from "@/lib/books";
 
-// better-sqlite3 is a native module, so this route cannot run on the edge.
+// pg needs Node's TCP/TLS sockets, so this route cannot run on the edge.
 export const runtime = "nodejs";
 
 /** GET /api/books — library list with progress summary (SPEC.md §4). */

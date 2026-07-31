@@ -2,7 +2,8 @@ import { resolveProvider } from "@/lib/translator/provider";
 import { translateNextBatch } from "@/lib/translator/translateNextBatch";
 import { TranslationError } from "@/lib/translator/types";
 
-// better-sqlite3 is a native module, and batches can take a while to translate.
+// pg needs Node's TCP/TLS sockets (no edge runtime support), and batches can
+// take a while to translate.
 export const runtime = "nodejs";
 export const maxDuration = 300;
 

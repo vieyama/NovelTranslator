@@ -6,8 +6,13 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-# Skip postinstall (prisma generate) until the full source and a build-time
-# DATABASE_URL are available.
+# The root postinstall (`prisma generate`) needs a resolvable DATABASE_URL,
+# not available at this stage — scripts are skipped here and the client is
+# generated explicitly in the builder stage instead, once the full source
+# (and a build-time dummy DATABASE_URL) is present. Safe to skip here: unlike
+# better-sqlite3 (this project's previous driver, before switching to
+# Postgres), `pg` is pure JS — no native binary to fetch/build via an
+# install script, so --ignore-scripts has nothing to silently break.
 RUN npm ci --ignore-scripts
 
 
@@ -20,7 +25,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-ARG DATABASE_URL=file:./build.db
+# Just needs to be a syntactically valid postgresql:// URL — pg.Pool (unlike
+# better-sqlite3) never connects eagerly at construction, only lazily on the
+# first query, so this never actually needs to be reachable during the build.
+# The real value is injected at runtime via docker-compose, pointing at the
+# `postgres` service instead.
+ARG DATABASE_URL=postgresql://build:build@localhost:5432/build
 ENV DATABASE_URL=${DATABASE_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -42,31 +52,19 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN groupadd --system --gid 1001 nodejs && \
     useradd --system --uid 1001 --gid nodejs nextjs
 
-# Standalone output
+# Next.js standalone output (next.config.ts `output: "standalone"`) is
+# self-contained — it ships its own pruned node_modules, so nothing from the
+# deps/builder stages needs copying separately. (No more manual
+# native-binary copying here — that was a better-sqlite3-specific problem,
+# gone now that the driver is pg, pure JS.)
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# --------------------------------------------------------------------
-# Prisma 7 + better-sqlite3
-# --------------------------------------------------------------------
-
-# Generated Prisma client (generator output = src/generated/prisma)
+# Generated Prisma client (generator output = src/generated/prisma) lives
+# outside node_modules, alongside the app's own source — copied explicitly
+# since standalone's output-file tracing only covers node_modules.
 COPY --from=builder --chown=nextjs:nodejs /app/src/generated ./src/generated
-
-# Prisma adapter (contains nested better-sqlite3)
-COPY --from=builder --chown=nextjs:nodejs \
-    /app/node_modules/@prisma \
-    ./node_modules/@prisma
-
-# Copy nested native binary explicitly
-COPY --from=builder --chown=nextjs:nodejs \
-    /app/node_modules/@prisma/adapter-better-sqlite3/node_modules \
-    ./node_modules/@prisma/adapter-better-sqlite3/node_modules
-
-# --------------------------------------------------------------------
-
-RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
 USER nextjs
 

@@ -34,7 +34,8 @@ yarn-error.log*
 .env*
 !.env.local.example
 
-# local database (SQLite) — personal data, never committed
+# leftover from before the Postgres switch (SPEC.md §7.1) — the app no longer
+# reads this, but it still holds real pre-migration data, never commit it
 *.db
 *.db-journal
 *.db-wal

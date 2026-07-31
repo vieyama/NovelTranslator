@@ -1,11 +1,30 @@
 name: ${COMPOSE_PROJECT_NAME:-novel-translator}
 
-# No postgres/minio/smtp/oauth here — this app is single-user with no auth
-# (CLAUDE.md), storing everything in one SQLite file. Access control lives
-# outside this file entirely, at the reverse proxy (Nginx Proxy Manager Access
-# List / basic auth) in front of whatever host port APP_PORT exposes.
+# No minio/smtp/oauth here — this app has no file storage beyond the DB and
+# no email flows, and explicitly has no auth (CLAUDE.md — single-user app).
+# Access control lives outside this file entirely, at the reverse proxy
+# (Nginx Proxy Manager Access List / basic auth) in front of whatever host
+# port APP_PORT exposes.
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5437}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   migrate:
     container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_migrate
     build:
@@ -14,9 +33,10 @@ services:
       target: builder
     command: npx prisma migrate deploy
     environment:
-      DATABASE_URL: file:/app/data/production.db
-    volumes:
-      - sqlite_data:/app/data
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: on-failure
 
   app:
@@ -28,7 +48,7 @@ services:
     ports:
       - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3020}:3007"
     environment:
-      DATABASE_URL: file:/app/data/production.db
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-claude}
       DEFAULT_MAX_CHARS: ${DEFAULT_MAX_CHARS:-3000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
@@ -38,11 +58,11 @@ services:
       # TRANSLATION_EFFORT: medium
       # GEMINI_MODEL: gemini-flash-latest
       NODE_ENV: production
-    volumes:
-      - sqlite_data:/app/data
     depends_on:
+      postgres:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
 
 volumes:
-  sqlite_data:
+  postgres_data:

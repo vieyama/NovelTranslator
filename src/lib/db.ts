@@ -1,15 +1,15 @@
 // Server-only: importing this from a Client Component would pull secrets
-// and/or native bindings into the browser bundle. Prisma client + native better-sqlite3 binding.
+// into the browser bundle. Prisma client + pg driver.
 import "server-only";
 
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
-// Prisma 7 requires an explicit driver adapter; the URL is root-relative
-// (dev.db sits next to package.json), matching prisma.config.ts.
+// Prisma 7 requires an explicit driver adapter; DATABASE_URL is a
+// postgresql:// connection string, matching prisma.config.ts.
 function createPrismaClient() {
-  const adapter = new PrismaBetterSqlite3({
-    url: process.env.DATABASE_URL ?? "file:./dev.db",
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL,
   });
 
   return new PrismaClient({ adapter });

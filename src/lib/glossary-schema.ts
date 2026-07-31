@@ -1,9 +1,9 @@
 /**
  * Glossary vocabulary and shapes shared by client and server.
  *
- * Kept separate from `glossary.ts` on purpose: that module imports Prisma,
- * which pulls the native better-sqlite3 binding into any bundle that touches
- * it. A `"use client"` component importing from here stays browser-safe.
+ * Kept separate from `glossary.ts` on purpose: that module imports Prisma
+ * (and the `pg` driver, a Node-only module) into any bundle that touches it.
+ * A `"use client"` component importing from here stays browser-safe.
  */
 
 /** Mirrors the naming rules in TRANSLATION_RULES.md; the UI offers these as hints. */
