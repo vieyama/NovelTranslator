@@ -587,6 +587,36 @@ Notes:
         returns to bare `/books`. Title sort confirmed case-insensitive —
         `middlemarch` lands between `Anna Karenina` and `zebra-tale`.
 
+- [x] Reader: "Go to page" jump control for long books (ad hoc user request —
+      190-page novels made the windowed page numbers impractical)
+      - `src/components/GoToPage.tsx`, generic and presentation-only like
+        `Pagination.tsx` beside it (page numbers in, `getHref` out — no book or
+        paragraph knowledge). The existing pagination is untouched and still
+        works; the jump control sits beside it on desktop, below it on mobile.
+      - Mobile gets a native full-width `<select>` (OS picker, 44px tall);
+        desktop gets a number input + `<datalist>` so typing `150` narrows to
+        "Halaman 150" and Enter jumps. A plain `<select>` can't do the typing
+        part — its type-ahead matches option text from the start, so "150"
+        never finds "Halaman 150". Both are rendered and toggled by CSS
+        breakpoint, the same rule `Pagination` already follows.
+      - **Two bugs found by testing in a browser, not by reading the code** —
+        both would have passed `tsc`/`eslint`/build:
+        1. Typing an out-of-range page did nothing. `max={totalPages}` makes
+           the browser run constraint validation *before* `onSubmit`, so the
+           clamp never executed. Fixed with `noValidate`.
+        2. Focus was dropped to `<body>` on every jump (App Router resets it),
+           stranding keyboard users. Confirmed via a tagged DOM node that the
+           input is *not* remounted across the navigation, so the fix restores
+           focus rather than fighting a re-render — guarded on `<body>` still
+           holding focus so it never yanks it back from elsewhere.
+      - Verified against a real 5700-paragraph / 190-page book, 28 checks at
+        1280px and 320px: jump in one action, active page always selected,
+        value re-syncs after navigating, no document reload, no horizontal
+        overflow (scrollWidth 320 = clientWidth 320), Prev/Next fully on screen
+        and ≥44px, old pagination still working with its ellipses intact, and
+        reading progress unchanged by jumping (marked #89 on page 3, jumped to
+        160 and back, still "Dibaca: 90 / 5700").
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order

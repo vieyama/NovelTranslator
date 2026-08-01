@@ -177,12 +177,45 @@ separate "chapter" or "section" state to fall out of sync with.
   shows a compact `‹ 9 [10] 11 ›` (current page ±1, no ellipsis, no First/Last);
   desktop shows the full `« ‹ 1 … 8 9 [10] 11 12 … 35 › »`. All controls are at
   least 44×44px (touch-friendly).
+- **Go to page** (`src/components/GoToPage.tsx`, generic like `Pagination`
+  beside it): one action to reach any page, since the windowed numbers above
+  can only step a few pages at a time — on a 190-page book, getting from page 1
+  to page 150 otherwise means many clicks. Navigation is
+  `router.push(getHref(page))`, the same App Router client navigation
+  `next/link` performs, so it shares the router cache, never reloads the
+  document, and still leaves `?page=N` in the URL — reading progress is
+  untouched by it, living in the DB keyed by `orderIndex`. Two renderings via
+  the same CSS-breakpoint rule as the pagination itself:
+  - *mobile*: a native `<select>` of every page ("Halaman 1"…), full width and
+    44px tall, so it opens the OS picker;
+  - *desktop*: a number input backed by a `<datalist>`, so typing `150` narrows
+    to "Halaman 150" and Enter jumps there. A `<select>`'s built-in type-ahead
+    can't do this — it matches option text from the start, so "150" would look
+    for a page labelled "150…" and never find "Halaman 150".
+
+  The form is `noValidate` on purpose: with `max={totalPages}`, browser
+  constraint validation blocks submission of an out-of-range number *before*
+  the submit handler runs, so typing 9999 would silently do nothing instead of
+  clamping to the last page. `min`/`max` stay for the spinner bounds and
+  assistive tech; the clamp in the handler is what actually enforces the range.
+
+  It also restores focus to itself after a jump. App Router navigation resets
+  focus to `<body>`, which would strand a keyboard user after every jump; the
+  control's elements are not remounted across the navigation, so this restores
+  what was lost rather than fighting a fresh render, and it only reclaims focus
+  when `<body>` still holds it — never from wherever the reader has since moved
+  it deliberately.
 - **Performance**: the page-number list is windowed by construction — its
   length is bounded by the sibling count (≈9 items max), never by `totalPages`.
   A 3000-paragraph, 100-page book still renders the same handful of buttons a
   10-page book does. This is separate from paragraph windowing, which was
   already true since Phase 4 (one page's worth of paragraphs fetched at a
-  time, never the whole book).
+  time, never the whole book). `GoToPage` is the deliberate exception: it does
+  render one `<option>` per page, because a jump-to-any-page control is
+  worthless windowed. That is affordable where a windowed *button* list isn't —
+  options are text-only leaf nodes with no handlers, and the popup is the
+  browser's own virtualised list, so the per-interactive-element cost the
+  windowing avoids simply isn't there (190 pages ≈ 190 options ≈ 7KB of HTML).
 - **Accessibility**: the control is a `<nav aria-label="Navigasi halaman">`
   wrapping a `<ul>`/`<li>` list. Every First/Previous/Next/Last control has an
   `aria-label`; every page number link has `aria-label="Ke halaman N"`; the

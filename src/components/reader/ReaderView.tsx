@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 // From the schema module, not `@/lib/reader` — that one imports Prisma.
 import { pageForIndex, type ReaderPage } from "@/lib/reader-schema";
+import { GoToPage } from "@/components/GoToPage";
 import { Pagination } from "@/components/Pagination";
 
 import { ParagraphBlock } from "./ParagraphBlock";
@@ -91,6 +92,10 @@ export function ReaderView({ page }: { page: ReaderPage }) {
   const firstUntranslatedOnScreen = paragraphs.find((p) => p.translatedText === null)?.orderIndex;
 
   const lastOnScreen = paragraphs.at(-1)?.orderIndex;
+
+  // Shared by the page numbers and the jump control, so both navigate through
+  // exactly the same URL shape.
+  const pageHref = (targetPage: number) => `/books/${book.id}?page=${targetPage}`;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-6 sm:px-6">
@@ -222,11 +227,24 @@ export function ReaderView({ page }: { page: ReaderPage }) {
           </div>
         )}
 
-        <Pagination
-          currentPage={pagination.currentPage}
-          totalPages={pagination.totalPages}
-          getHref={(targetPage) => `/books/${book.id}?page=${targetPage}`}
-        />
+        {/* Stacked on mobile (numbers first, then a full-width page picker);
+            side by side on desktop, where `flex-1` keeps the existing centred
+            pagination centred in the space left over by the jump control. */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+          <Pagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            getHref={pageHref}
+            className="sm:order-1 sm:flex-1"
+          />
+
+          <GoToPage
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            getHref={pageHref}
+            className="sm:order-2 sm:shrink-0"
+          />
+        </div>
       </div>
     </div>
   );

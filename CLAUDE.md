@@ -132,6 +132,20 @@ Client Component, Node just doesn't set the condition Next does.
   on a still-clickable link is a trap for keyboard/AT users. When a link-shaped
   control can't go anywhere (first page, last page, etc.), render a disabled
   button instead of a dead or half-disabled link.
+- **A submit handler that clamps needs `noValidate` on the form.** Browser
+  constraint validation (`min`/`max`/`required`) runs *before* `onSubmit`, so
+  an out-of-range value is rejected by the browser and the handler never runs —
+  the clamp looks like it silently does nothing. `GoToPage.tsx` hit this: typing
+  a page past the end did nothing instead of going to the last page. Keep
+  `min`/`max` for the spinner and assistive tech, put the real rule in the
+  handler, and set `noValidate` so it can actually run.
+- **App Router navigation resets focus to `<body>`.** Any control that
+  navigates and expects to be used again (page jumpers, filters, sort selects)
+  strands keyboard users unless it restores its own focus afterwards. Check
+  first that the element isn't remounted by the navigation — if it survives,
+  re-focusing restores what was lost; if it doesn't, a `key` change is the real
+  bug. Only reclaim focus while `document.body` still holds it, so focus the
+  user has deliberately moved isn't yanked back.
 - **Windowed rendering, not exhaustive rendering, for anything whose count
   scales with the book.** Paragraphs are fetched one page at a time
   (`READER_PAGE_SIZE`, Phase 4); page-*number* lists in `Pagination.tsx` are
