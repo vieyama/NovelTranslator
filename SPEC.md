@@ -196,7 +196,17 @@ separate "chapter" or "section" state to fall out of sync with.
   "Continue reading" / "Continue translating" buttons.
 - **Upload form** at the top of the page (`UploadBookForm`): file
   (`.txt`/`.epub`) plus optional title/author, posting to `POST /api/books`.
-  Title falls back to the filename when left empty.
+  Title falls back to the filename when left empty. Parsing a large novel takes
+  a few seconds, so the submit button reports progress via `useFormStatus`
+  (see CLAUDE.md — a `useState` flag set inside the form action does not work).
+- **Sort control** (`BookSortSelect`), shown once there are at least two books:
+  newest/oldest added, title A–Z/Z–A, and most-read/most-translated. The choice
+  lives in the URL as `?sort=`, so a sorted library is bookmarkable and survives
+  reload and Back; the default (`recent`) is the bare `/books` URL, keeping one
+  canonical address. Options are defined once in `books-schema.ts` and shared by
+  the server page and the client control. Ranking happens in
+  `listBooksWithProgress` on the derived summaries rather than in the SQL, since
+  the progress orders key off percentages that aren't columns.
 - **Delete button** per book (`DeleteBookButton`) calling
   `DELETE /api/books/:id`. Deletion cascades to paragraphs, progress, and
   glossary terms — including all translated text — so the UI confirms with an

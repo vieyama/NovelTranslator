@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 
 /**
@@ -13,7 +14,6 @@ export function UploadBookForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [, startTransition] = useTransition();
-  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -25,7 +25,6 @@ export function UploadBookForm() {
       return;
     }
 
-    setIsUploading(true);
     setError(null);
     setSuccess(null);
 
@@ -54,8 +53,6 @@ export function UploadBookForm() {
       startTransition(() => router.refresh());
     } catch {
       setError("Tidak bisa menghubungi server.");
-    } finally {
-      setIsUploading(false);
     }
   }
 
@@ -99,19 +96,7 @@ export function UploadBookForm() {
         </label>
       </div>
 
-      <button
-        type="submit"
-        disabled={isUploading}
-        className="mt-4 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-wait disabled:opacity-70 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-      >
-        {isUploading ? "Mengunggah…" : "Unggah"}
-      </button>
-
-      {isUploading && (
-        <p className="mt-2 text-xs text-zinc-500">
-          File besar butuh beberapa detik untuk diparse.
-        </p>
-      )}
+      <SubmitButton />
 
       {success && (
         <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">{success}</p>
@@ -119,5 +104,40 @@ export function UploadBookForm() {
 
       {error && <p className="mt-2 text-sm text-red-700 dark:text-red-400">{error}</p>}
     </form>
+  );
+}
+
+/**
+ * Submit button + "this may take a moment" hint, driven by `useFormStatus`.
+ *
+ * This has to be its own component nested *inside* the `<form>`: `useFormStatus`
+ * reads the status of the nearest parent form, so calling it in `UploadBookForm`
+ * itself would always report `pending: false`.
+ *
+ * It replaces an `isUploading` useState that never visibly turned on. React runs
+ * a function `action` inside a transition, so `setIsUploading(true)` at the top
+ * and `(false)` in the `finally` were both part of that one transition — React
+ * collapsed them and only ever committed the final `false`, so the button never
+ * rendered its loading label no matter how long the parse took.
+ */
+function SubmitButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <>
+      <button
+        type="submit"
+        disabled={pending}
+        className="mt-4 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-wait disabled:opacity-70 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+      >
+        {pending ? "Mengunggah…" : "Unggah"}
+      </button>
+
+      {pending && (
+        <p className="mt-2 text-xs text-zinc-500" role="status">
+          File besar butuh beberapa detik untuk diparse.
+        </p>
+      )}
+    </>
   );
 }

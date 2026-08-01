@@ -2,6 +2,7 @@
 // and/or native bindings into the browser bundle. Prisma.
 import "server-only";
 
+import { DEFAULT_BOOK_SORT, type BookSort } from "@/lib/books-schema";
 import { prisma } from "@/lib/db";
 import { EpubParseError, parse as parseEpub } from "@/lib/parser/epub";
 import { parse as parseTxt } from "@/lib/parser/txt";
@@ -130,8 +131,17 @@ export interface BookSummary {
 }
 
 /** Library listing with the progress summary the /books page needs (SPEC.md §3.4). */
-export async function listBooksWithProgress(): Promise<BookSummary[]> {
+export async function listBooksWithProgress(
+  sort: BookSort = DEFAULT_BOOK_SORT,
+): Promise<BookSummary[]> {
   const books = await prisma.book.findMany({
+    // Newest-first is the base order, then `sort` is applied to the derived
+    // summaries below. Sorting can't be pushed entirely into the query: the
+    // progress options rank by percentages that don't exist as columns —
+    // they're computed from `lastTranslatedIndex` and the grouped translated
+    // count. Doing all six in one place beats splitting them across a Prisma
+    // `orderBy` and a JS comparator, and the library is a single user's
+    // bookshelf (tens of rows), not something that scales with book length.
     orderBy: { createdAt: "desc" },
     include: { progress: true },
   });
@@ -152,7 +162,7 @@ export async function listBooksWithProgress(): Promise<BookSummary[]> {
     translatedCounts.map((row) => [row.bookId, row._count._all]),
   );
 
-  return books.map((book) => {
+  const summaries = books.map((book) => {
     const lastTranslatedIndex = book.progress?.lastTranslatedIndex ?? -1;
     const lastReadIndex = book.progress?.lastReadIndex ?? -1;
 
@@ -171,6 +181,41 @@ export async function listBooksWithProgress(): Promise<BookSummary[]> {
       readPercent: toPercent(lastReadIndex + 1, book.totalParagraphs),
     };
   });
+
+  // `sort` is stable in JS, so every comparator that returns 0 for a tie falls
+  // back to the newest-first order the query already produced — e.g. sorting a
+  // fresh library by progress leaves it in "recently added" order rather than
+  // an arbitrary one, because every book is at 0%.
+  return summaries.sort(BOOK_COMPARATORS[sort]);
+}
+
+/**
+ * Progress comparators rank by *ratio*, not by the rounded percentage shown in
+ * the UI — otherwise 2/3 and 67/100 would tie at 67% and be ordered by
+ * insertion instead of by how far along they actually are. They use the
+ * `lastReadIndex` / `lastTranslatedIndex` watermarks, matching what the
+ * progress bar draws, rather than `translatedCount`, which can run ahead of the
+ * watermark when a batch is translated past a gap (CLAUDE.md).
+ */
+const BOOK_COMPARATORS: Record<BookSort, (a: BookSummary, b: BookSummary) => number> = {
+  recent: (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+  oldest: (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+  title: (a, b) => compareTitles(a, b),
+  "title-desc": (a, b) => compareTitles(b, a),
+  reading: (a, b) =>
+    progressRatio(b.lastReadIndex + 1, b.totalParagraphs) -
+    progressRatio(a.lastReadIndex + 1, a.totalParagraphs),
+  translation: (a, b) =>
+    progressRatio(b.lastTranslatedIndex + 1, b.totalParagraphs) -
+    progressRatio(a.lastTranslatedIndex + 1, a.totalParagraphs),
+};
+
+/**
+ * Locale-aware so Indonesian titles sort the way a reader expects, and
+ * case/accent-insensitive so "anna" and "Anna" don't end up in separate runs.
+ */
+function compareTitles(a: BookSummary, b: BookSummary): number {
+  return a.title.localeCompare(b.title, "id", { sensitivity: "base", numeric: true });
 }
 
 function parseByFormat(format: SupportedFormat, bytes: Uint8Array): ParsedParagraph[] {
@@ -207,10 +252,14 @@ function stripExtension(fileName: string): string {
   return fileName.replace(/\.[^./\\]+$/, "").trim();
 }
 
-function toPercent(done: number, total: number): number {
+/** 0–1, clamped. Shared by the displayed percentage and the sort comparators. */
+function progressRatio(done: number, total: number): number {
   if (total <= 0) return 0;
-  const clamped = Math.min(Math.max(done, 0), total);
-  return Math.round((clamped / total) * 100);
+  return Math.min(Math.max(done, 0), total) / total;
+}
+
+function toPercent(done: number, total: number): number {
+  return Math.round(progressRatio(done, total) * 100);
 }
 
 function formatBytes(bytes: number): string {

@@ -110,6 +110,16 @@ Client Component, Node just doesn't set the condition Next does.
   Contrast with the reader's view-mode toggle, which is a *preference*, not
   navigable state — that one is correctly in `localStorage` via
   `useSyncExternalStore` (see `components/reader/types.ts`), not the URL.
+- **A form's pending state comes from `useFormStatus`, never from a `useState`
+  flag set inside the action.** React runs a function `action={fn}` inside a
+  transition, so `setIsUploading(true)` at the top and `(false)` in the
+  `finally` land in the *same* transition — React collapses them and only ever
+  commits the final `false`. The spinner/disabled state then never appears, no
+  matter how slow the request is, and it fails silently: no error, no warning,
+  `tsc` and `eslint` both pass. `UploadBookForm.tsx` hit exactly this. The fix
+  is a child component inside the `<form>` calling `useFormStatus()` — it must
+  be a child, since the hook reads the nearest *parent* form and returns
+  `pending: false` when called in the component that renders the form itself.
 - **Responsive layout switches are CSS breakpoints (`sm:hidden` /
   `hidden sm:flex`), never a client-side media query.** The server can't know
   viewport width before hydration, so a JS-based switch either flashes the

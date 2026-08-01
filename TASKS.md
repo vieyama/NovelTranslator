@@ -554,6 +554,39 @@ Notes:
       - Verified locally with `docker compose up -d --build` against a real
         Postgres container before handoff, not just `docker compose config`.
 
+- [x] Library: fix the upload button's missing loading state, and add sorting
+      (ad hoc user request)
+      - **Upload loading state never appeared.** `UploadBookForm` tracked
+        `isUploading` in `useState`, set `true` at the top of the form action
+        and `false` in its `finally`. React runs a function `action` inside a
+        transition, so both updates belonged to the same transition and were
+        collapsed — only the final `false` was ever committed, so the button
+        kept saying "Unggah" for the whole upload. Replaced with a
+        `SubmitButton` child calling `useFormStatus()` (must be a child: the
+        hook reads the nearest parent form).
+      - Verified in a real browser (Playwright driving installed Chrome, with
+        the `/api/books` response held open 2s so the pending window is
+        observable, since a small file parses too fast to catch): label →
+        "Mengunggah…", button disabled, hint shown, then all three revert.
+        The same probe was run against the pre-fix file from git — it fails
+        there and passes after, so the diagnosis is confirmed, not assumed.
+      - **Sorting**: `?sort=` on `/books` with six orders (newest/oldest added,
+        title A–Z/Z–A, most read, most translated). URL-based, not component
+        state, so it survives reload and Back and stays bookmarkable; the
+        default is the bare `/books` so there's one canonical URL. Options live
+        in the new `src/lib/books-schema.ts` (no Prisma import) and are shared
+        by the server page and the client `BookSortSelect`.
+      - Ranking runs in `listBooksWithProgress` over the derived summaries, not
+        as a Prisma `orderBy`: the progress orders key off percentages that
+        aren't columns. Comparators use exact ratios rather than the rounded
+        displayed percent (2/3 vs 67/100 would otherwise tie), and rely on JS
+        sort stability so ties fall back to newest-first.
+      - Verified all six orders plus an invalid `?sort=bogus` (falls back to
+        the default rather than erroring), and in-browser: select → URL
+        changes, reload and Back both preserve the order, choosing the default
+        returns to bare `/books`. Title sort confirmed case-insensitive —
+        `middlemarch` lands between `Anna Karenina` and `zebra-tale`.
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order

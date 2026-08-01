@@ -1,9 +1,11 @@
 import Link from "next/link";
 
 import { ProgressBar } from "@/components/ProgressBar";
+import { BookSortSelect } from "@/components/library/BookSortSelect";
 import { DeleteBookButton } from "@/components/library/DeleteBookButton";
 import { UploadBookForm } from "@/components/library/UploadBookForm";
 import { listBooksWithProgress } from "@/lib/books";
+import { parseBookSort } from "@/lib/books-schema";
 import { pageForIndex } from "@/lib/reader-schema";
 
 /** Library view (SPEC.md §3.4). Always reads live progress from the DB. */
@@ -11,8 +13,14 @@ export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Perpustakaan — Novel Translator" };
 
-export default async function BooksPage() {
-  const books = await listBooksWithProgress();
+export default async function BooksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string }>;
+}) {
+  const { sort } = await searchParams;
+  const activeSort = parseBookSort(sort);
+  const books = await listBooksWithProgress(activeSort);
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
@@ -25,6 +33,14 @@ export default async function BooksPage() {
         <UploadBookForm />
       </div>
 
+      {/* Nothing to reorder with a single book, so the control only earns its
+          space once there are at least two. */}
+      {books.length > 1 && (
+        <div className="mt-8 flex justify-end">
+          <BookSortSelect value={activeSort} />
+        </div>
+      )}
+
       {books.length === 0 ? (
         <div className="mt-10 rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
           <p className="text-zinc-600 dark:text-zinc-400">Belum ada buku.</p>
@@ -34,7 +50,9 @@ export default async function BooksPage() {
           </p>
         </div>
       ) : (
-        <ul className="mt-8 space-y-4">
+        // The sort control, when shown, already supplies the gap below the
+        // upload form — so the list only needs the full margin without it.
+        <ul className={`${books.length > 1 ? "mt-4" : "mt-8"} space-y-4`}>
           {books.map((book) => {
             // Where translation should pick up; also where the inline
             // "translate next batch" button lives in the reader.
