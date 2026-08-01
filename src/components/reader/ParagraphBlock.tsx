@@ -35,11 +35,10 @@ export function ParagraphBlock({
   return (
     <article
       id={`p-${paragraph.orderIndex}`}
-      className={`group scroll-mt-24 rounded-lg border-l-2 py-3 pl-4 pr-2 transition-colors ${
-        isRead
+      className={`group scroll-mt-24 rounded-lg border-l-2 py-3 pl-4 pr-2 transition-colors ${isRead
           ? "border-emerald-500/70 bg-emerald-50/40 dark:bg-emerald-950/20"
           : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-700"
-      }`}
+        }`}
     >
       <div
         className={
@@ -51,11 +50,10 @@ export function ParagraphBlock({
         {showOriginal && (
           <p
             lang="en"
-            className={`text-[0.975rem] leading-relaxed ${
-              viewMode === "side-by-side"
+            className={`text-[0.975rem] leading-relaxed ${viewMode === "side-by-side"
                 ? "text-zinc-500 dark:text-zinc-400"
                 : "text-zinc-800 dark:text-zinc-200"
-            }`}
+              }`}
           >
             {paragraph.originalText}
           </p>
@@ -84,12 +82,14 @@ export function ParagraphBlock({
 
         {isRead ? (
           <>
-            <span className="text-emerald-700 dark:text-emerald-400">Sudah dibaca</span>
+            <span className="text-emerald-700 dark:text-emerald-400">
+              Sudah dibaca
+            </span>
             <button
               type="button"
               onClick={() => onMarkUnread(paragraph.orderIndex)}
               disabled={isMarking}
-              className="rounded cursor-pointer text-zinc-400 opacity-0 transition-opacity hover:text-amber-700 focus:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 group-hover:opacity-100 disabled:cursor-wait disabled:opacity-70 dark:hover:text-amber-400"
+              className="rounded cursor-pointer text-zinc-400 transition-colors hover:text-amber-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 disabled:cursor-wait disabled:opacity-70 dark:hover:text-amber-400"
             >
               {isMarking ? "Menyimpan…" : "Tandai belum dibaca"}
             </button>
@@ -99,7 +99,7 @@ export function ParagraphBlock({
             type="button"
             onClick={() => onMarkRead(paragraph.orderIndex)}
             disabled={isMarking}
-            className="rounded cursor-pointer text-zinc-400 opacity-0 transition-opacity hover:text-emerald-700 focus:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 group-hover:opacity-100 disabled:cursor-wait dark:hover:text-emerald-400"
+            className="rounded cursor-pointer text-zinc-400 transition-colors hover:text-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-wait dark:hover:text-emerald-400"
           >
             {isMarking ? "Menyimpan…" : "Tandai sudah dibaca sampai sini"}
           </button>

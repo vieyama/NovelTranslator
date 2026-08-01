@@ -213,7 +213,7 @@ export function ReaderView({ page }: { page: ReaderPage }) {
               type="button"
               onClick={() => markRead(lastOnScreen)}
               disabled={markingIndex !== null}
-              className="rounded-md cursor-pointer bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
+              className="rounded-md cursor-pointer bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
             >
               {markingIndex === lastOnScreen
                 ? "Menyimpan…"
