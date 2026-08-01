@@ -46,7 +46,7 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_app
     restart: unless-stopped
     ports:
-      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3020}:3007"
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3007}:3007"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-claude}
