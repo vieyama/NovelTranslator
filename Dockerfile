@@ -41,7 +41,7 @@ RUN bun run build
 FROM oven/bun:1-slim AS runner
 WORKDIR /app
 
-LABEL org.opencontainers.image.title="papre"
+LABEL org.opencontainers.image.title="Novel Translator"
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

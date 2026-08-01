@@ -1,14 +1,8 @@
 name: ${COMPOSE_PROJECT_NAME:-novel-translator}
 
-# No minio/smtp/oauth here — this app has no file storage beyond the DB and
-# no email flows, and explicitly has no auth (CLAUDE.md — single-user app).
-# Access control lives outside this file entirely, at the reverse proxy
-# (Nginx Proxy Manager Access List / basic auth) in front of whatever host
-# port APP_PORT exposes.
-
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:16-alpine
     container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_postgres
     restart: unless-stopped
     environment:
@@ -16,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     ports:
-      - '5439:5432'
+      - "5439:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,7 +25,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: builder
-    command: npx prisma migrate deploy
+    command: bunx prisma migrate deploy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
     depends_on:
@@ -53,11 +47,11 @@ services:
       DEFAULT_MAX_CHARS: ${DEFAULT_MAX_CHARS:-3000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      NODE_ENV: production
       # Optional overrides (SPEC.md §7) — uncomment to set a non-default model:
       # TRANSLATION_MODEL: claude-opus-5
       # TRANSLATION_EFFORT: medium
       # GEMINI_MODEL: gemini-flash-latest
-      NODE_ENV: production
     depends_on:
       postgres:
         condition: service_healthy
