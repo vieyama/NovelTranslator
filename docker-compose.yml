@@ -1,9 +1,9 @@
 name: ${COMPOSE_PROJECT_NAME:-novel-translator}
 
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_postgres
+    container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
@@ -53,7 +53,7 @@ services:
       # TRANSLATION_EFFORT: medium
       # GEMINI_MODEL: gemini-flash-latest
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
