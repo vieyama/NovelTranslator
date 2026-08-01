@@ -1,9 +1,5 @@
-import { config as loadEnv } from "dotenv";
-import { defineConfig, env } from "prisma/config";
-
-// Next.js loads .env.local automatically; the Prisma CLI does not, so load it
-// here explicitly. All app config lives in .env.local (SPEC.md §7).
-loadEnv({ path: ".env.local" });
+import 'dotenv/config'
+import { defineConfig } from 'prisma/config'
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -14,6 +10,6 @@ export default defineConfig({
     seed: "tsx --conditions=react-server prisma/seed.ts",
   },
   datasource: {
-    url: env("DATABASE_URL"),
+    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? "",
   },
-});
+})
