@@ -15,8 +15,8 @@ function createPrismaClient() {
   return new PrismaClient({ adapter });
 }
 
-// Next.js hot-reloads modules in dev, which would otherwise open a new SQLite
-// connection on every reload. Cache the instance on globalThis.
+// Next.js hot-reloads modules in dev, which would otherwise open a new pg
+// connection pool on every reload. Cache the instance on globalThis.
 const globalForPrisma = globalThis as unknown as {
   prisma?: ReturnType<typeof createPrismaClient>;
 };

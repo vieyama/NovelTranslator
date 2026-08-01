@@ -319,17 +319,37 @@ error) as a later enhancement (Phase 7).
 
 ## 7. Configuration
 
-`.env.local`:
+Two env files, read by different things — keep both in sync:
+
+`.env.local` (Next.js dev server, `bun run dev`) / `.env` (Docker Compose, and
+Prisma CLI via `prisma.config.ts`'s `dotenv/config`):
 ```
 ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
 TRANSLATION_PROVIDER=claude   # "claude" | "gemini"
 DEFAULT_MAX_CHARS=3000
-DATABASE_URL="postgresql://user:password@localhost:5437/novel_translator?schema=public"
+DATABASE_URL="postgresql://user:password@localhost:5439/novel_translator_db?schema=public"
+
+# Compose-only (docker-compose.yml fails fast if any is missing):
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_DB=
+APP_PORT=3007
 ```
 
-Local dev Postgres runs via `docker compose up -d postgres`, exposed on host
-port 5437 (not 5432) to avoid clashing with a system-wide Postgres install.
+Local dev Postgres runs via `docker compose up -d db`, exposed on host port
+5439 (not 5432) to avoid clashing with a system-wide Postgres install, and
+bound to `127.0.0.1` only.
+
+**`DATABASE_URL` is host-side only.** It points at `localhost:5439`, which is
+correct for `bun run dev`, `prisma studio`, and `prisma migrate dev` — all
+running on the host. Containers cannot use it: inside the Compose network the
+database is `db:5432`. So `docker-compose.yml` deliberately ignores
+`.env`'s `DATABASE_URL` and derives the container-side URL from the
+`POSTGRES_*` values instead (`postgresql://$USER:$PASSWORD@db:5432/$DB`). The
+URL's host must therefore match the *service name* in `docker-compose.yml` —
+renaming that service without updating both `environment:` blocks is what
+produces `P1001: Can't reach database server at ...`.
 
 ### 7.1 Database: PostgreSQL
 
@@ -358,41 +378,68 @@ existing Drone CI / Nginx Proxy Manager pattern used for other apps (which
 uses Postgres + MinIO + SMTP + Google OAuth). Differences from that reference,
 and why:
 
-- **`postgres` service kept, everything else dropped.** No MinIO, no SMTP, no
-  Google OAuth, no `DATA_ENCRYPTION_MASTER_KEY` — this app has no file storage
-  beyond the DB, no email flows, and explicitly "No auth/session management
-  needed" (CLAUDE.md). Access control for the publicly-reachable VPS instance
-  is basic auth at the reverse proxy (Nginx Proxy Manager Access List),
-  entirely outside this repo — the app itself is unaware it's behind one.
-  `postgres`'s host port is bound to `127.0.0.1` only (unlike the reference),
-  since nothing outside the Docker network needs to reach it directly.
-- **Runtime is Node.js, not Bun** — was the default preference (matches the
-  user's other apps), reverted after testing: Bun 1.3.x (tested on both macOS
-  and Linux/arm64, before switching to Postgres) crashed with a fatal NAPI
-  error (`Error::New napi_get_last_error_info`) the moment `better-sqlite3`'s
-  native binding loaded — confirmed a genuine Bun bug (its own crash reporter
-  said so), not a config issue. Moot now that the driver is `pg` (pure JS), but
-  Node was already confirmed working and there was no reason to re-test Bun
-  against it.
-- **`migrate` is a one-shot service** (`npx prisma migrate deploy`), gated on
-  `postgres`'s healthcheck (`depends_on: condition: service_healthy`); `app`
-  in turn waits on `migrate` completing successfully — same shape as the
-  reference.
+- **Three services: `db`, `migrate`, `app`.** Everything else from the
+  reference was dropped — no MinIO, no SMTP, no Google OAuth, no
+  `DATA_ENCRYPTION_MASTER_KEY` — this app has no file storage beyond the DB,
+  no email flows, and explicitly "No auth/session management needed"
+  (CLAUDE.md). Access control for the publicly-reachable VPS instance is basic
+  auth at the reverse proxy (Nginx Proxy Manager Access List), entirely
+  outside this repo — the app itself is unaware it's behind one. `db`'s host
+  port is bound to `127.0.0.1` only (unlike the reference), since nothing
+  outside the Docker network needs to reach it directly.
+- **The Postgres service is named `db`**, and `migrate`/`app`'s `DATABASE_URL`
+  must use `db` as the host (§7 above). The service was originally called
+  `postgres`; when it was renamed, the two `DATABASE_URL` values still said
+  `@postgres:5432`, and every deploy failed with `P1001: Can't reach database
+  server at postgres:5432` — the healthcheck passed (the server was fine), the
+  name just didn't resolve. If that error reappears, check the host in the URL
+  against the service key before anything else.
+- **Runtime is Bun** (`oven/bun:1` builder, `oven/bun:1-slim` runner) — the
+  user's default, matching their other apps. It was Node.js (`node:20-slim`)
+  for one round: Bun 1.3.x crashed with a fatal NAPI error
+  (`Error::New napi_get_last_error_info`) the moment `better-sqlite3`'s native
+  binding loaded, verified on both macOS and Linux/arm64 and confirmed a
+  genuine Bun bug (its own crash reporter said so), not a config issue. That
+  was a native-binding failure, and `pg` is pure JS with no native binding at
+  all, so switching the driver removed the cause rather than working around
+  it — Bun was re-tested against `pg` and is fine.
+- **`migrate` is a one-shot service** (`bunx prisma migrate deploy`), gated on
+  `db`'s healthcheck (`depends_on: condition: service_healthy`); `app` in turn
+  waits on `migrate` completing successfully — same shape as the reference. It
+  runs with `restart: "no"`: the healthcheck already guarantees Postgres is
+  accepting connections, so any failure here is a real migration problem, and
+  `restart: on-failure` only printed the same error four times over and buried
+  it. `.drone.yml` always runs `docker compose logs migrate` after `up` for
+  the same reason.
 - **Both `ANTHROPIC_API_KEY` and `GEMINI_API_KEY`** are wired as secrets, so
   `TRANSLATION_PROVIDER` can be flipped on the VPS (edit the Drone secret,
   redeploy) without touching code, matching §6's provider-agnostic design.
+- **`.drone.yml`'s `write-env` step does not write `DATABASE_URL`**, and there
+  is no Drone/Vault secret for it. Compose derives the container-side URL from
+  `POSTGRES_*` (§7 above), so a `DATABASE_URL` in `.env` is silently ignored —
+  writing one would only create a second, unused source of truth for the host
+  name that can drift out of sync with the service name. `POSTGRES_*` are the
+  secrets; the URL is assembled from them.
 - **`next.config.ts`**: just `output: "standalone"` — no
   `outputFileTracingIncludes` needed (that was specifically working around
   `better-sqlite3`'s prebuilt-binary-via-dynamic-path shape; `pg` has no
   equivalent problem).
+- **`DATABASE_URL` is set before `prisma generate` in *both* the `deps` and
+  `builder` stages.** Prisma's config loader resolves the datasource URL
+  before either command runs, and `deps`' `bun install` triggers
+  `package.json`'s `postinstall: prisma generate` — so the `ARG`/`ENV` pair
+  has to precede the install, not just `next build`. `prisma.config.ts` is
+  copied into `deps` for the same reason. This exact ordering has broken the
+  build once already (`RUN npx prisma generate` sat above the `ARG` lines).
 - **Verified end-to-end locally** before handoff: `docker compose up` against
   a real Postgres container — `migrate` applies cleanly, `app` boots, and a
   full create → read → delete cycle through the real API confirmed the `pg`
-  adapter works correctly (this is what caught two real bugs during
-  development: `RUN npx prisma generate` running before `DATABASE_URL` was
-  set in the Dockerfile, and `--ignore-scripts` on `npm ci` silently skipping
-  `better-sqlite3`'s own native-binary install step — both fixed and
-  re-verified before this section was written).
+  adapter works correctly. This is what caught the real bugs during
+  development, in order: `RUN npx prisma generate` running before
+  `DATABASE_URL` was set in the Dockerfile; `--ignore-scripts` on `npm ci`
+  silently skipping `better-sqlite3`'s own native-binary install step (both
+  moot now — Bun + `pg`); and the `postgres` → `db` service rename that left
+  `@postgres:5432` in both `DATABASE_URL`s.
 
 ## 8. MVP Scope (Phase 1)
 

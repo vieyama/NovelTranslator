@@ -26,10 +26,12 @@ Notes:
   output (`src/generated/prisma`), and requires a **driver adapter** —
   `@prisma/adapter-better-sqlite3` + `better-sqlite3` are installed for Phase 1's
   `src/lib/db.ts`.
-- `prisma.config.ts` loads `.env.local` via `dotenv` (the Prisma CLI does not read
-  `.env.local` on its own; Next.js does). The default `.env` was deleted so there
-  is a single source of config.
-- `.env.local.example` added as a committable template.
+- `prisma.config.ts` loads env vars via `dotenv` (the Prisma CLI does not read
+  `.env.local` on its own; Next.js does). **Superseded (deployment work): it is
+  now plain `import 'dotenv/config'`, which reads `.env`, not `.env.local`** —
+  `.env` is also what `docker compose` reads, so the two files now exist side
+  by side with the same contents rather than one being deleted. SPEC.md §7.
+- `.env.local.example` added as a committable template for both.
 - `npm audit` reports high-severity advisories in dev-only transitive deps
   (eslint/postcss chains); fixing needs breaking major upgrades, skipped for a
   local single-user app.
@@ -508,6 +510,44 @@ Notes:
         API (upload a book, confirm it lists and its reader page renders,
         delete it, confirm the cascade) — not just a page load.
       - SPEC.md §7.1 documents the switch; §7.2 (deployment) updated to match.
+- [x] Fix the VPS deploy failing at the migration step, and re-sync the docs
+      with the deployment files (ad hoc user request)
+      - **Root cause of `P1001: Can't reach database server at postgres:5432`**:
+        the Compose service was renamed `postgres` → `db` (commits 07eb202,
+        e533164), but the `DATABASE_URL` in `migrate`'s and `app`'s
+        `environment:` blocks still said `@postgres:5432`. Postgres itself was
+        healthy — `db`'s healthcheck passed and gated `migrate` correctly; the
+        host name just didn't resolve on the Compose network. Fixed by pointing
+        both at `@db:5432`.
+      - `migrate` went from `restart: on-failure` to `restart: "no"` — the
+        healthcheck already proves the server is up, so a failure here is a
+        real migration problem, and the retry loop is why the same P1001 was
+        printed four times over. `.drone.yml`'s deploy step now always runs
+        `docker compose logs migrate` after `up`, so the reason is in the CI
+        log without SSH-ing to the VPS.
+      - Removed the `DATABASE_URL` Drone/Vault secret and its `write-env` line:
+        `docker-compose.yml` derives the container-side URL from `POSTGRES_*`
+        and never reads `${DATABASE_URL}`, so that secret was a second,
+        unused source of truth for the host name — exactly the thing that
+        drifted. `.env`'s `DATABASE_URL` (localhost:5439) stays, for host-side
+        Prisma CLI / `bun run dev` only.
+      - `db`'s host port is now actually bound to `127.0.0.1` (`5439:5432` had
+        been publishing on all interfaces, including the VPS's public one —
+        SPEC.md §7.2 had claimed 127.0.0.1 since the Postgres switch).
+      - Dockerfile: `ARG`/`ENV DATABASE_URL` moved back above
+        `bunx prisma generate` in `builder` (the regression that broke the
+        first VPS deploy had reappeared), and added to `deps` too — `bun
+        install` fires `postinstall: prisma generate` there, so that stage
+        needs it as well, along with a copy of `prisma.config.ts`.
+      - **Docs re-synced to what the files actually do**: SPEC.md §7 (both env
+        files, port 5439, why containers can't use `DATABASE_URL`) and §7.2
+        (service named `db`, runtime is Bun not `node:20-slim`, Drone has no
+        `DATABASE_URL` secret); CLAUDE.md's deployment notes; README's quick
+        start; `.env.local.example` (5439 not 5437, `docker compose up -d db`
+        not `... postgres`, plus the `POSTGRES_*`/`APP_PORT` keys Compose
+        requires, which the template had never listed).
+      - Verified locally with `docker compose up -d --build` against a real
+        Postgres container before handoff, not just `docker compose config`.
 
 ## Non-Negotiables (recheck before marking any phase done)
 

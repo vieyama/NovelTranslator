@@ -16,7 +16,8 @@ Related docs:
   Next-specific code.
 
 Prisma 7 note: the datasource URL lives in `prisma.config.ts` (which loads
-`.env.local`), **not** in `schema.prisma`, and the client needs the
+`.env` via `dotenv/config` — not `.env.local`, which only Next.js reads),
+**not** in `schema.prisma`, and the client needs the
 `@prisma/adapter-pg` driver adapter (Postgres, SPEC.md §7.1). See
 `.agents/skills/prisma-*` for the version-accurate API.
 
@@ -166,7 +167,8 @@ Client Component, Node just doesn't set the condition Next does.
 ## Common Commands
 
 ```bash
-npx prisma migrate dev --name <name>   # after changing schema.prisma
+docker compose up -d db                 # local Postgres on 127.0.0.1:5439
+npx prisma migrate dev --name <name>    # after changing schema.prisma
 npx prisma studio                       # inspect local data
 bun run dev
 ```
@@ -179,22 +181,38 @@ docker compose up -d --build                                        # local end-
 docker compose logs migrate                                         # check this first if `app` never comes up
 ```
 
-- **The datasource is Postgres (`@prisma/adapter-pg`), not SQLite.** It was
-  SQLite (`@prisma/adapter-better-sqlite3`) until switched at explicit user
-  request — partly because Bun 1.3.x fatally crashed
+- **`.env` (compose + Prisma CLI) and `.env.local` (Next dev server) are two
+  files with the same contents.** `.env.local.example` is the template for
+  both. Changing an env var means changing it in both places, plus
+  `.drone.yml`'s `write-env` step if the VPS needs it.
+- **`DATABASE_URL` in `.env` is host-side only** (`localhost:5439`) — for
+  `bun run dev` / `prisma studio` / `prisma migrate dev`. Compose *ignores*
+  it and derives the container-side URL from `POSTGRES_*` with host `db`, the
+  Compose service name. The two `environment:` blocks in `docker-compose.yml`
+  are the only place that host name appears, and renaming the service without
+  updating them is what produced `P1001: Can't reach database server at
+  postgres:5432` on the VPS. `.drone.yml` deliberately has no `DATABASE_URL`
+  secret, so there's nothing to drift.
+- **The datasource is Postgres (`@prisma/adapter-pg`), not SQLite,** and the
+  runtime is Bun (`oven/bun:1` / `oven/bun:1-slim`). It was SQLite
+  (`@prisma/adapter-better-sqlite3`) on Node (`node:20-slim`) until switched
+  at explicit user request — partly because Bun 1.3.x fatally crashed
   (`Error::New napi_get_last_error_info`) loading `better-sqlite3`'s native
   binding (confirmed on macOS and Linux/arm64, confirmed a genuine Bun bug
   before ruling it out), and switching the driver to `pg` (pure JS) sidesteps
-  that class of problem entirely rather than working around it. Runtime is
-  still Node (`node:20-slim`), which was already confirmed working — no
-  reason to re-test Bun against a driver that no longer has the issue.
+  that class of problem entirely rather than working around it. Since the
+  crash was specifically a native binding and `pg` has none, Bun came back
+  once the driver changed — don't reintroduce `node:20-slim` on the strength
+  of a stale doc mentioning the NAPI crash.
 - **`prisma generate`'s config loader needs `DATABASE_URL` resolvable *before*
   it runs, not just before `next build`.** Bit twice during the deployment
   work: once by running `RUN npx prisma generate` before the `ARG`/`ENV
   DATABASE_URL` lines in the Dockerfile (fixed by reordering), and once by
   `--ignore-scripts` on `npm ci` silently skipping `better-sqlite3`'s own
   native-binary install step (moot now — `pg` has no install-time compile
-  step at all, so `--ignore-scripts` is safe again). If a future dependency
+  step at all). Both Dockerfile stages that run `prisma generate` set the
+  dummy `DATABASE_URL` first — including `deps`, where it's `postinstall`
+  rather than an explicit `RUN` that triggers it. If a future dependency
   needs its own install script to run, don't reach for `--ignore-scripts` in
   the `deps` stage without checking what else it silently skips.
 

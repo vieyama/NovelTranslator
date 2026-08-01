@@ -1,7 +1,7 @@
 // Data model for Novel Translator — see SPEC.md §2 and GLOSSARY.md.
 //
-// Prisma 7: the datasource URL lives in prisma.config.ts (which loads
-// .env.local), not here. Re-run `npx prisma generate` after editing this file.
+// Prisma 7: the datasource URL lives in prisma.config.ts (which loads .env),
+// not here. Re-run `npx prisma generate` after editing this file.
 
 generator client {
   provider = "prisma-client"

@@ -1,3 +1,10 @@
+# Compose reads `.env` (repo root) for the ${...} values below.
+#
+# NOTE: `.env`'s own DATABASE_URL points at localhost:5439 — that is for
+# host-side tooling only (`prisma studio`, `prisma migrate dev`, `bun run dev`).
+# It is deliberately NOT reused here: inside the Docker network the database is
+# reachable as `db:5432`, so the container-side DATABASE_URL is derived from the
+# POSTGRES_* values instead. Service name and URL host must stay in sync.
 name: ${COMPOSE_PROJECT_NAME:-novel-translator}
 
 services:
@@ -9,8 +16,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    # Host-bound to localhost only (SPEC.md §7.2) — nothing outside the Docker
+    # network needs to reach Postgres directly, and on the VPS this port must
+    # not be internet-reachable. 5439 avoids clashing with a system Postgres.
     ports:
-      - "5439:5432"
+      - "${DB_BIND_ADDRESS:-127.0.0.1}:${DB_PORT:-5439}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,11 +37,14 @@ services:
       target: builder
     command: bunx prisma migrate deploy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}
     depends_on:
       db:
         condition: service_healthy
-    restart: on-failure
+    # No restart: `db`'s healthcheck already guarantees the server is accepting
+    # connections before this runs, so a failure here is a real migration
+    # problem. Retrying would just print the same error N times and hide it.
+    restart: "no"
 
   app:
     build:
@@ -42,7 +55,7 @@ services:
     ports:
       - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3007}:3007"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-claude}
       DEFAULT_MAX_CHARS: ${DEFAULT_MAX_CHARS:-3000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}

@@ -23,7 +23,7 @@ This app removes the manual steps above by:
 ## Tech Stack
 
 - **Next.js (App Router) + TypeScript** — UI reader & API routes
-- **PostgreSQL** (via Prisma + `pg`) — local dev via `docker compose up -d postgres`, same engine on the VPS
+- **PostgreSQL** (via Prisma + `pg`) — local dev via `docker compose up -d db`, same engine on the VPS
 - **Anthropic API / other AI provider** — translation engine
 - **Tailwind CSS** — fast styling
 
@@ -39,9 +39,19 @@ This app removes the manual steps above by:
 ## Quick Start (once scaffolding is done)
 
 ```bash
+cp .env.local.example .env.local   # fill in the API keys
+cp .env.local.example .env         # docker compose reads this one
 bun install
+docker compose up -d db            # local Postgres on 127.0.0.1:5439
 npx prisma migrate dev
 bun run dev
+```
+
+Full stack in Docker (what the VPS runs):
+
+```bash
+docker compose up -d --build
+docker compose logs migrate        # check this first if `app` never comes up
 ```
 
 ## Folder Structure (planned)

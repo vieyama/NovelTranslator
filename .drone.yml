@@ -29,15 +29,16 @@ steps:
         from_secret: ANTHROPIC_API_KEY
       GEMINI_API_KEY:
         from_secret: GEMINI_API_KEY
-      DATABASE_URL:
-        from_secret: DATABASE_URL
     commands:
+      # No DATABASE_URL here on purpose: docker-compose.yml derives the
+      # container-side URL from POSTGRES_* with host `db` (the service name).
+      # A DATABASE_URL in .env would be silently ignored by compose, so
+      # setting one would only invite host mismatches.
       - |
         cat > /drone/src/.env <<EOF
         POSTGRES_USER=$${POSTGRES_USER}
         POSTGRES_PASSWORD=$${POSTGRES_PASSWORD}
         POSTGRES_DB=$${POSTGRES_DB}
-        DATABASE_URL=$${DATABASE_URL}
         APP_BIND_ADDRESS=0.0.0.0
         APP_PORT=$${APP_PORT}
         TRANSLATION_PROVIDER=$${TRANSLATION_PROVIDER}
@@ -58,20 +59,18 @@ steps:
       - apk add --no-cache docker-cli-compose
       - cd /drone/src
       - docker compose down --remove-orphans
-      - docker compose up -d --build
+      # `app` gates on `migrate` completing successfully, so a failed migration
+      # makes `up` exit non-zero with only "dependency failed to start" — the
+      # actual reason is in `migrate`'s log. Drone's shell is `sh -e`, so print
+      # it here or the step dies before the log line below ever runs.
+      - docker compose up -d --build || { docker compose logs migrate; exit 1; }
+      - docker compose logs migrate
       - docker compose ps
 
 volumes:
   - name: docker-sock
     host:
       path: /var/run/docker.sock
-
----
-kind: secret
-name: DATABASE_URL
-get:
-  path: drone/data/vieyama/novel-translator
-  name: DATABASE_URL
 
 ---
 kind: secret
