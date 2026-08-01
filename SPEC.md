@@ -424,13 +424,20 @@ and why:
   `outputFileTracingIncludes` needed (that was specifically working around
   `better-sqlite3`'s prebuilt-binary-via-dynamic-path shape; `pg` has no
   equivalent problem).
-- **`DATABASE_URL` is set before `prisma generate` in *both* the `deps` and
-  `builder` stages.** Prisma's config loader resolves the datasource URL
-  before either command runs, and `deps`' `bun install` triggers
-  `package.json`'s `postinstall: prisma generate` — so the `ARG`/`ENV` pair
-  has to precede the install, not just `next build`. `prisma.config.ts` is
-  copied into `deps` for the same reason. This exact ordering has broken the
-  build once already (`RUN npx prisma generate` sat above the `ARG` lines).
+- **`DATABASE_URL` is set before `prisma generate` in the `builder` stage** —
+  Prisma's config loader resolves the datasource URL before the command runs,
+  so the `ARG`/`ENV` pair has to precede it, not just `next build`. This exact
+  ordering has broken the build twice: once originally, and again when it
+  silently regressed back to `RUN prisma generate` above the `ARG` lines.
+- **`deps` installs with `--ignore-scripts`**, so it never runs
+  `postinstall: prisma generate` and never needs a datasource URL at all. That
+  generate was pure waste there regardless: the generator writes to
+  `../src/generated/prisma`, `deps` has no `src/`, and only `node_modules` is
+  carried into `builder` — which generates properly once the real sources are
+  present. Safe *specifically because* no dependency has an install script now
+  that the driver is pure-JS `pg`; this same flag previously caused a real
+  outage by skipping `better-sqlite3`'s native-binary step, so recheck it
+  before adding any dependency that compiles or downloads a binary.
 - **Verified end-to-end locally** before handoff: `docker compose up` against
   a real Postgres container — `migrate` applies cleanly, `app` boots, and a
   full create → read → delete cycle through the real API confirmed the `pg`

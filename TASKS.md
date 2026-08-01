@@ -535,10 +535,15 @@ Notes:
         been publishing on all interfaces, including the VPS's public one —
         SPEC.md §7.2 had claimed 127.0.0.1 since the Postgres switch).
       - Dockerfile: `ARG`/`ENV DATABASE_URL` moved back above
-        `bunx prisma generate` in `builder` (the regression that broke the
-        first VPS deploy had reappeared), and added to `deps` too — `bun
-        install` fires `postinstall: prisma generate` there, so that stage
-        needs it as well, along with a copy of `prisma.config.ts`.
+        `bunx prisma generate` in `builder` — the regression that broke the
+        first VPS deploy had reappeared. `deps` now installs with
+        `--ignore-scripts` instead of also being given a `DATABASE_URL`
+        (the first attempt here): its `postinstall: prisma generate` was
+        writing to `../src/generated/prisma` in a stage that has no `src/`,
+        and only `node_modules` is carried into `builder`, so it was pure
+        waste. Safe only while every dependency is script-free — true now
+        that the driver is `pg`, and the reason this flag is called out in
+        SPEC.md §7.2.
       - **Docs re-synced to what the files actually do**: SPEC.md §7 (both env
         files, port 5439, why containers can't use `DATABASE_URL`) and §7.2
         (service named `db`, runtime is Bun not `node:20-slim`, Drone has no

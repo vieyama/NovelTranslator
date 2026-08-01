@@ -210,11 +210,13 @@ docker compose logs migrate                                         # check this
   DATABASE_URL` lines in the Dockerfile (fixed by reordering), and once by
   `--ignore-scripts` on `npm ci` silently skipping `better-sqlite3`'s own
   native-binary install step (moot now — `pg` has no install-time compile
-  step at all). Both Dockerfile stages that run `prisma generate` set the
-  dummy `DATABASE_URL` first — including `deps`, where it's `postinstall`
-  rather than an explicit `RUN` that triggers it. If a future dependency
-  needs its own install script to run, don't reach for `--ignore-scripts` in
-  the `deps` stage without checking what else it silently skips.
+  step at all). The `builder` stage sets the dummy `DATABASE_URL` before its
+  `prisma generate`; `deps` installs with `--ignore-scripts` so it never runs
+  `postinstall: prisma generate` at all — that generate wrote to a path
+  (`../src/generated/prisma`) that doesn't exist in a stage with no `src/`,
+  and only `node_modules` is carried forward anyway. If a future dependency
+  needs its own install script to run, don't leave `--ignore-scripts` in the
+  `deps` stage without checking what else it silently skips.
 
 ## Definition of "Done" for a feature
 

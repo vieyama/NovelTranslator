@@ -10,16 +10,18 @@ WORKDIR /app
 
 COPY package.json bun.lock ./
 COPY prisma ./prisma/
-COPY prisma.config.ts ./
 
-# package.json's `postinstall` runs `prisma generate`, and Prisma's config
-# loader resolves the datasource URL before it runs — so DATABASE_URL has to be
-# set here, not just before `next build`. Dummy value; the real one is injected
-# at runtime by docker-compose.
-ARG DATABASE_URL=postgresql://build:build@localhost:5432/build
-ENV DATABASE_URL=${DATABASE_URL}
-
-RUN bun install --frozen-lockfile
+# --ignore-scripts skips package.json's `postinstall: prisma generate`, which is
+# pure waste in this stage: the generator's output path is ../src/generated, and
+# this stage has no src/ — only node_modules is carried forward, and `builder`
+# runs `prisma generate` explicitly once the real sources are in place. Skipping
+# it also keeps the datasource URL out of this stage entirely.
+#
+# Safe here specifically because no dependency needs an install script: `pg` is
+# pure JS (unlike the better-sqlite3 driver this replaced, whose native-binary
+# step --ignore-scripts silently skipped — SPEC.md §7.2). Recheck that before
+# adding a dependency that compiles or downloads a binary at install time.
+RUN bun install --frozen-lockfile --ignore-scripts
 
 
 # ================================
