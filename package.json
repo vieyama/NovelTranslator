@@ -10,9 +10,9 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
-    "user:create": "tsx --conditions=react-server scripts/create-user.ts",
+    "user:create": "bun --conditions=react-server scripts/create-user.ts",
     "postinstall": "prisma generate",
-    "user:bootstrap": "tsx --conditions=react-server scripts/bootstrap-user.ts"
+    "user:bootstrap": "bun --conditions=react-server scripts/bootstrap-user.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

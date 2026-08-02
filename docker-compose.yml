@@ -39,9 +39,14 @@ services:
     # that email doesn't exist yet. The second step is what stops the first
     # deploy from showing an empty library: books predating auth are unowned,
     # and the first account created adopts them.
+    # `bun`, not `bunx tsx`: the runtime here is Bun, which runs TypeScript
+    # natively, while tsx is a Node loader and fails under it with
+    # "Cannot find module './cjs/index.cjs'". `--conditions=react-server` is
+    # load-bearing — without it the `import "server-only"` guard at the top of
+    # src/lib/* throws instead of compiling away.
     command: >
       sh -c "bunx prisma migrate deploy &&
-             bunx tsx --conditions=react-server scripts/bootstrap-user.ts"
+             bun --conditions=react-server scripts/bootstrap-user.ts"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}
       # Needed to wrap the new user's data key. This is the only service built
@@ -51,7 +56,7 @@ services:
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required}
       # Default account. Optional: leave unset and create accounts by hand with
       #   docker compose run --rm migrate \
-      #     bunx tsx --conditions=react-server scripts/create-user.ts you@example.com
+      #     bun --conditions=react-server scripts/create-user.ts you@example.com
       # An existing account is never modified, so changing the password here
       # after first deploy has no effect — by design, so a stale value can't
       # become a permanent backdoor.

@@ -25,11 +25,6 @@ export default async function LoginPage({
       </p>
 
       <LoginForm next={safeNext(next)} initialError={error ? "Email atau kata sandi salah." : null} />
-
-      <p className="mt-6 text-xs text-zinc-500">
-        Tidak ada pendaftaran terbuka. Akun dibuat lewat{" "}
-        <code className="font-mono">bun run user:create</code>.
-      </p>
     </div>
   );
 }

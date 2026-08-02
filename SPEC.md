@@ -544,7 +544,7 @@ too (it needs to wrap the new user's DEK). To add an account later:
 
 ```bash
 docker compose run --rm migrate \
-  bunx tsx --conditions=react-server scripts/create-user.ts you@example.com
+  bun --conditions=react-server scripts/create-user.ts you@example.com
 ```
 
 **Bootstrap never modifies an existing account.** If the email is already

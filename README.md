@@ -61,7 +61,7 @@ already exists is never modified. To add one later:
 
 ```bash
 docker compose run --rm migrate \
-  bunx tsx --conditions=react-server scripts/create-user.ts you@example.com
+  bun --conditions=react-server scripts/create-user.ts you@example.com
 ```
 
 Full stack in Docker (what the VPS runs):
