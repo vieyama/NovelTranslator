@@ -1,4 +1,5 @@
 import { BookImportError, deleteBook } from "@/lib/books";
+import { UnauthorizedError, requireApiUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -12,10 +13,15 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { id } = await params;
 
   try {
-    const { title } = await deleteBook(id);
+    const user = await requireApiUser();
+    const { title } = await deleteBook(id, user.id);
 
     return Response.json({ deleted: { id, title } });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+
     if (error instanceof BookImportError) {
       return Response.json({ error: error.message }, { status: error.status });
     }

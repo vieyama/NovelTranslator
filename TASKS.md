@@ -617,6 +617,54 @@ Notes:
         reading progress unchanged by jumping (marked #89 on page 3, jumped to
         160 and back, still "Dibaca: 90 / 5700").
 
+- [x] Authentication (NextAuth email+password) + AI settings with encrypted
+      API keys (explicit user request; supersedes the original "no auth needed")
+      - **Three decisions confirmed with the user before building**, because
+        each changed a lot: full multi-user (per-user libraries) over a bare
+        login gate; master key in env over the originally-proposed
+        username-derived key; no public sign-up.
+      - **The proposed encryption scheme had a real flaw, and was changed.**
+        The original idea stored the key-encrypting key in the user table,
+        wrapped with something derived from the username. Both halves then live
+        in the same database, so a dump contains everything needed to unwrap it
+        — the encryption would have protected against nothing but casual
+        browsing. Replaced with envelope encryption rooted in
+        `APP_ENCRYPTION_KEY` (env, never stored), and the user id kept as GCM
+        **AAD** rather than key material — which is what the "combine with the
+        username" instinct was actually reaching for: it binds a ciphertext to
+        its owner so rows can't be swapped between users. SPEC.md §8.3.
+      - `Book.userId` is nullable because books predate auth and the migration
+        had to run against a populated database. The first account created
+        claims all unowned books; later accounts deliberately do not.
+      - Someone else's book is a **404, not a 403** — a 403 confirms the id
+        exists, which is what a probe wants.
+      - `src/proxy.ts`, not `middleware.ts`: Next 16 renamed the convention
+        (and Proxy now defaults to the Node runtime). It excludes `/api/*` on
+        purpose — redirecting a `fetch` to an HTML login page produces
+        "can't reach server" instead of "signed out". Real enforcement is
+        `requireUser`/`requireApiUser` in every page and route.
+      - scrypt from `node:crypto` for passwords, not bcrypt/argon2: both ship
+        native bindings, and this repo has already lost a day to one (§7.1).
+      - **Removed the module-level SDK client cache in both provider clients.**
+        Harmless while the key came from one env var; with per-user keys it
+        would have pinned the first user's key into the module and billed
+        everyone else's translations to them.
+      - **Bug found while testing the `user:create` script**: it opened a new
+        readline interface per prompt. Closing one ends stdin, so the second
+        prompt never resolved — with piped input the process then exited 0
+        having written nothing, silently. Now one interface for interactive
+        use, and a separate read-stdin-to-end path for piped input so the
+        script is scriptable.
+      - Verified: 18 crypto/password checks (envelope round-trip, cross-user
+        and cross-provider AAD rejection, tampered-ciphertext rejection, and
+        that stolen rows without the env key cannot be decrypted), plus 27
+        browser checks across two accounts — auth gate, wrong-password
+        handling that doesn't reveal whether an account exists, complete data
+        isolation (page + API: delete/progress/glossary/translate on another
+        user's book all 404), settings round-trip, provider-dependent model
+        list, and that the plaintext key never reaches the browser. A full
+        `pg_dump` contains neither the API key nor any password.
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order

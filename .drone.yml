@@ -29,6 +29,12 @@ steps:
         from_secret: ANTHROPIC_API_KEY
       GEMINI_API_KEY:
         from_secret: GEMINI_API_KEY
+      AUTH_SECRET:
+        from_secret: AUTH_SECRET
+      APP_ENCRYPTION_KEY:
+        from_secret: APP_ENCRYPTION_KEY
+      AUTH_URL:
+        from_secret: AUTH_URL
     commands:
       # No DATABASE_URL here on purpose: docker-compose.yml derives the
       # container-side URL from POSTGRES_* with host `db` (the service name).
@@ -44,6 +50,9 @@ steps:
         TRANSLATION_PROVIDER=$${TRANSLATION_PROVIDER}
         ANTHROPIC_API_KEY=$${ANTHROPIC_API_KEY}
         GEMINI_API_KEY=$${GEMINI_API_KEY}
+        AUTH_SECRET=$${AUTH_SECRET}
+        APP_ENCRYPTION_KEY=$${APP_ENCRYPTION_KEY}
+        AUTH_URL=$${AUTH_URL}
         COMPOSE_PROJECT_NAME=novel-translator
         EOF
 
@@ -120,3 +129,24 @@ name: GEMINI_API_KEY
 get:
   path: drone/data/vieyama/novel-translator
   name: GEMINI_API_KEY
+
+---
+kind: secret
+name: AUTH_SECRET
+get:
+  path: drone/data/vieyama/novel-translator
+  name: AUTH_SECRET
+
+---
+kind: secret
+name: APP_ENCRYPTION_KEY
+get:
+  path: drone/data/vieyama/novel-translator
+  name: APP_ENCRYPTION_KEY
+
+---
+kind: secret
+name: AUTH_URL
+get:
+  path: drone/data/vieyama/novel-translator
+  name: AUTH_URL

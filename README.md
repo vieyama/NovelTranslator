@@ -41,11 +41,18 @@ This app removes the manual steps above by:
 ```bash
 cp .env.local.example .env.local   # fill in the API keys
 cp .env.local.example .env         # docker compose reads this one
+# Generate the two secrets the app needs, into BOTH files:
+#   AUTH_SECRET / APP_ENCRYPTION_KEY  <- openssl rand -base64 32
 bun install
 docker compose up -d db            # local Postgres on 127.0.0.1:5439
 npx prisma migrate dev
+bun run user:create                # no public sign-up; first account claims existing books
 bun run dev
 ```
+
+> **Keep `APP_ENCRYPTION_KEY` safe.** It encrypts the API keys stored in the
+> database; if it is lost, every stored key becomes unreadable and has to be
+> re-entered in Settings (SPEC.md §8.3).
 
 Full stack in Docker (what the VPS runs):
 

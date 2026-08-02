@@ -4,7 +4,7 @@ import "server-only";
 
 import { createClaudeProvider } from "./claudeClient";
 import { createGeminiProvider } from "./geminiClient";
-import { TranslationError, type TranslationProvider } from "./types";
+import { TranslationError, type ProviderConfig, type TranslationProvider } from "./types";
 
 /**
  * Chooses the translation provider from config (SPEC.md §6).
@@ -26,16 +26,18 @@ const ALIASES: Record<string, ProviderName> = {
   google: "gemini",
 };
 
-const FACTORIES: Record<ProviderName, () => TranslationProvider> = {
+const FACTORIES: Record<ProviderName, (config: ProviderConfig) => TranslationProvider> = {
   claude: createClaudeProvider,
   gemini: createGeminiProvider,
 };
 
 /**
- * @param requested Overrides `TRANSLATION_PROVIDER`; used by tests and by any
- *   future per-book provider setting.
+ * @param config The API key and model to run this batch with — resolved per
+ *   user by `resolveAiConfig` (SPEC.md §8), not read from the environment here.
+ * @param requested Overrides `TRANSLATION_PROVIDER`; the user's stored provider
+ *   is passed in through this.
  */
-export function resolveProvider(requested?: string): TranslationProvider {
+export function resolveProvider(config: ProviderConfig, requested?: string): TranslationProvider {
   const raw = (requested ?? process.env.TRANSLATION_PROVIDER ?? DEFAULT_PROVIDER)
     .trim()
     .toLowerCase();
@@ -50,5 +52,5 @@ export function resolveProvider(requested?: string): TranslationProvider {
     );
   }
 
-  return FACTORIES[name]();
+  return FACTORIES[name](config);
 }

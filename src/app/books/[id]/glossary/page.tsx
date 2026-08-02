@@ -4,21 +4,25 @@ import { notFound } from "next/navigation";
 import { GlossaryEditor } from "@/components/glossary/GlossaryEditor";
 import { prisma } from "@/lib/db";
 import { listGlossaryTerms } from "@/lib/glossary";
+import { requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 /** Glossary editor for one book (GLOSSARY.md, TASKS.md Phase 6). */
 export default async function GlossaryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const user = await requireUser(`/books/${id}/glossary`);
 
-  const book = await prisma.book.findUnique({
-    where: { id },
+  // Scoped by owner: another user's book is indistinguishable from a missing
+  // one here (SPEC.md §8).
+  const book = await prisma.book.findFirst({
+    where: { id, userId: user.id },
     select: { id: true, title: true },
   });
 
   if (!book) notFound();
 
-  const terms = await listGlossaryTerms(book.id);
+  const terms = await listGlossaryTerms(book.id, user.id);
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">

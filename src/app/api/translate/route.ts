@@ -1,4 +1,5 @@
-import { resolveProvider } from "@/lib/translator/provider";
+import { AiSettingsError } from "@/lib/ai-settings";
+import { UnauthorizedError, requireApiUser } from "@/lib/session";
 import { translateNextBatch } from "@/lib/translator/translateNextBatch";
 import { TranslationError } from "@/lib/translator/types";
 
@@ -47,18 +48,36 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Provider comes from TRANSLATION_PROVIDER; everything after this point is
-    // identical for Claude and Gemini.
-    const provider = resolveProvider();
+    const user = await requireApiUser();
+
+    // Provider, model and API key all come from this user's settings (falling
+    // back to the server env vars); everything after this point is identical
+    // for Claude and Gemini.
     const result = await translateNextBatch({
       bookId: bookId.trim(),
+      userId: user.id,
       maxChars,
       fromIndex,
-      provider,
     });
 
     return Response.json(result);
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return Response.json(
+        { error: error.message, code: "unauthorized", progressAdvanced: false },
+        { status: error.status },
+      );
+    }
+
+    // A missing or undecryptable API key is a setup problem the user can fix
+    // in Settings, so it keeps its own message rather than becoming a 500.
+    if (error instanceof AiSettingsError) {
+      return Response.json(
+        { error: error.message, code: "missing_api_key", progressAdvanced: false },
+        { status: error.status },
+      );
+    }
+
     if (error instanceof TranslationError) {
       return Response.json(
         { error: error.message, code: error.code, progressAdvanced: false },

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 
 import { parseTranslationResponse } from "./parseResponse";
 import { buildPrompt } from "./prompt";
+import { resolveAiConfig } from "@/lib/ai-settings";
 import { resolveProvider } from "./provider";
 import { TranslationError, type TranslationProvider } from "./types";
 
@@ -35,7 +36,9 @@ export interface TranslateNextBatchInput {
    * watermark catches up automatically, see `advanceWatermark`).
    */
   fromIndex?: number;
-  /** Defaults to whatever `TRANSLATION_PROVIDER` selects. */
+  /** Owner of the book; scopes the lookup and selects whose API key is used. */
+  userId: string;
+  /** Defaults to the provider resolved from the user's settings. */
   provider?: TranslationProvider;
 }
 
@@ -62,20 +65,27 @@ export interface TranslateNextBatchResult {
 
 export async function translateNextBatch({
   bookId,
+  userId,
   maxChars,
   fromIndex,
-  provider = resolveProvider(),
+  provider,
 }: TranslateNextBatchInput): Promise<TranslateNextBatchResult> {
   const effectiveMaxChars = resolveMaxChars(maxChars);
 
-  const book = await prisma.book.findUnique({
-    where: { id: bookId },
+  // Scoped by owner: translating someone else's book reads as "not found",
+  // and spending their API budget is not possible (SPEC.md §8).
+  const book = await prisma.book.findFirst({
+    where: { id: bookId, userId },
     include: { progress: true, glossaryTerms: { orderBy: { term: "asc" } } },
   });
 
   if (!book) {
     throw new TranslationError(`Book ${bookId} not found.`, "provider_error", 404);
   }
+
+  // Resolved after the ownership check so a probe can't tell a missing book
+  // from a missing API key.
+  const activeProvider = provider ?? (await resolveProviderForUser(userId));
 
   if (
     fromIndex !== undefined &&
@@ -126,7 +136,7 @@ export async function translateNextBatch({
     glossaryTerms: book.glossaryTerms,
   });
 
-  const response = await provider.translateBatch(request);
+  const response = await activeProvider.translateBatch(request);
   const parsed = parseTranslationResponse(response.text, batch.length);
 
   if (!parsed.ok) {
@@ -160,7 +170,7 @@ export async function translateNextBatch({
       lastReadIndex,
       totalParagraphs: book.totalParagraphs,
     },
-    provider: provider.id,
+    provider: activeProvider.id,
     model: response.model,
     usage: response.usage,
   };
@@ -267,6 +277,17 @@ async function advanceWatermark(
   }
 
   return watermark;
+}
+
+/**
+ * Builds the provider for this user from their stored settings — provider,
+ * model, and a decrypted API key (falling back to the server env vars when
+ * they haven't configured their own).
+ */
+async function resolveProviderForUser(userId: string): Promise<TranslationProvider> {
+  const config = await resolveAiConfig(userId);
+
+  return resolveProvider({ apiKey: config.apiKey, model: config.model }, config.provider);
 }
 
 function resolveMaxChars(requested?: number): number {

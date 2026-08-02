@@ -36,13 +36,30 @@ detail.
 - **`orderIndex` is the source of truth** for paragraph order and progress. Don't
   use text-matching/fuzzy search to determine position — that's exactly the
   problem this app is meant to eliminate from the old manual workflow.
-- This is a small, personal-scale project (1 user, local data). Don't over-engineer:
-  - No auth/session management needed.
-  - No multi-tenancy or row-level security needed.
+- This is a small, personal-scale project. Don't over-engineer:
+  - ~~No auth/session management needed.~~ **Superseded (SPEC.md §8):** the app
+    is deployed to an internet-facing VPS and now has NextAuth email+password
+    with per-user libraries, at explicit user request. Accounts come from
+    `bun run user:create` — there is no public sign-up, deliberately.
+  - **Every query touching user data must be scoped by `userId`.** Book-id
+    entry points go through `assertBookOwned` (`src/lib/ownership.ts`) or a
+    `findFirst({ id, userId })`. Someone else's book is a **404, never a 403** —
+    a 403 confirms the id exists. `src/proxy.ts` redirects unauthenticated page
+    traffic but is *not* the boundary and does not cover `/api/*`: a new API
+    route is unprotected until it calls `requireApiUser`.
   - Postgres + Docker are in use (VPS deployment, SPEC.md §7.1/§7.2), at
     explicit user request — don't take that as license to add other
     infrastructure (queues, caches, etc.) without the same kind of ask.
 - Keep API keys and sensitive config in `.env.local`, never hardcoded.
+- **Secrets that reach the database are envelope-encrypted** (SPEC.md §8.3):
+  `APP_ENCRYPTION_KEY` (env) wraps a per-user DEK, which encrypts the API key,
+  with the user id as GCM **AAD**. Two rules that are easy to get wrong:
+  the root key must stay *outside* the database — deriving it from a column
+  like the username protects nothing, since a dump contains both halves — and
+  identity is mixed in as AAD, not as key material, which is what stops a
+  ciphertext being moved between users' rows. Never cache an unwrapped DEK
+  across requests, and never send a decrypted key to the browser (the settings
+  page shows a mask only).
 
 ## Tech Stack
 

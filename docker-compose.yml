@@ -56,6 +56,16 @@ services:
       - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3007}:3007"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      # Root key for stored API keys (SPEC.md §8). Required: without it the
+      # Settings page cannot save or read a key, and starting without one
+      # would look like data loss rather than a missing secret.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required}
+      # Behind a reverse proxy, NextAuth needs the public origin to build
+      # callback URLs; without it a login redirect can land on the container's
+      # own host name.
+      AUTH_TRUST_HOST: "true"
+      AUTH_URL: ${AUTH_URL:-}
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-claude}
       DEFAULT_MAX_CHARS: ${DEFAULT_MAX_CHARS:-3000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}

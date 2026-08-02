@@ -3,6 +3,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
+import { assertBookOwned, BookAccessError } from "@/lib/ownership";
 import type { GlossaryTermRecord } from "@/lib/glossary-schema";
 
 /**
@@ -35,8 +36,11 @@ export class GlossaryError extends Error {
   }
 }
 
-export async function listGlossaryTerms(bookId: string): Promise<GlossaryTermRecord[]> {
-  await assertBookExists(bookId);
+export async function listGlossaryTerms(
+  bookId: string,
+  userId: string,
+): Promise<GlossaryTermRecord[]> {
+  await assertBookAccess(bookId, userId);
 
   return prisma.glossaryTerm.findMany({
     where: { bookId },
@@ -47,9 +51,10 @@ export async function listGlossaryTerms(bookId: string): Promise<GlossaryTermRec
 
 export async function createGlossaryTerm(
   bookId: string,
+  userId: string,
   input: GlossaryTermInput,
 ): Promise<GlossaryTermRecord> {
-  await assertBookExists(bookId);
+  await assertBookAccess(bookId, userId);
 
   const term = requireTerm(input.term);
   await assertTermIsFree(bookId, term);
@@ -68,9 +73,12 @@ export async function createGlossaryTerm(
 
 export async function updateGlossaryTerm(
   bookId: string,
+  userId: string,
   termId: string,
   input: GlossaryTermInput,
 ): Promise<GlossaryTermRecord> {
+  await assertBookAccess(bookId, userId);
+
   const existing = await prisma.glossaryTerm.findFirst({
     where: { id: termId, bookId },
     select: { id: true, term: true },
@@ -104,7 +112,13 @@ export async function updateGlossaryTerm(
   });
 }
 
-export async function deleteGlossaryTerm(bookId: string, termId: string): Promise<void> {
+export async function deleteGlossaryTerm(
+  bookId: string,
+  userId: string,
+  termId: string,
+): Promise<void> {
+  await assertBookAccess(bookId, userId);
+
   const existing = await prisma.glossaryTerm.findFirst({
     where: { id: termId, bookId },
     select: { id: true },
@@ -117,11 +131,15 @@ export async function deleteGlossaryTerm(bookId: string, termId: string): Promis
   await prisma.glossaryTerm.delete({ where: { id: termId } });
 }
 
-async function assertBookExists(bookId: string): Promise<void> {
-  const book = await prisma.book.findUnique({ where: { id: bookId }, select: { id: true } });
-
-  if (!book) {
-    throw new GlossaryError(`Book ${bookId} not found.`, 404);
+/** Re-thrown as a GlossaryError so the route's existing error mapping still applies. */
+async function assertBookAccess(bookId: string, userId: string): Promise<void> {
+  try {
+    await assertBookOwned(bookId, userId);
+  } catch (error) {
+    if (error instanceof BookAccessError) {
+      throw new GlossaryError(error.message, error.status);
+    }
+    throw error;
   }
 }
 

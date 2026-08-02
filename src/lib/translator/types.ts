@@ -27,6 +27,19 @@ export interface TranslationResponse {
   };
 }
 
+/**
+ * Per-request provider credentials.
+ *
+ * Passed in rather than read from `process.env` inside the client, because the
+ * API key now belongs to a user, not to the server (SPEC.md §8) — and a
+ * process-wide value cannot represent that.
+ */
+export interface ProviderConfig {
+  apiKey: string;
+  /** Null = use the provider client's built-in default model. */
+  model?: string | null;
+}
+
 export interface TranslationProvider {
   /** Matches the `TRANSLATION_PROVIDER` value: `"claude"` or `"gemini"`. */
   readonly id: string;

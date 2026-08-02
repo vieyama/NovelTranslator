@@ -12,6 +12,44 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  // scrypt, format documented in src/lib/password.ts. Never a raw digest.
+  passwordHash String
+  // This user's data key, encrypted with APP_ENCRYPTION_KEY (env, never stored
+  // here) and bound to `id` as AAD — see src/lib/crypto.ts. Losing the env key
+  // makes every API key below unreadable; that is the intended tradeoff.
+  encryptedDek String
+  // Which provider the user's translations run through: "claude" | "gemini".
+  aiProvider   String   @default("claude")
+  createdAt    DateTime @default(now())
+
+  books          Book[]
+  aiCredentials  AiProviderCredential[]
+}
+
+// One row per (user, provider), so switching provider in Settings doesn't
+// discard the model and key already configured for the other one.
+model AiProviderCredential {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // "claude" | "gemini" — matches ProviderName in src/lib/translator/provider.ts.
+  provider String
+  // Null = fall back to the provider client's built-in default model.
+  model    String?
+  // AES-256-GCM under the user's DEK, AAD = "<userId>:<provider>". Null = not
+  // configured, in which case the server env var is used instead.
+  encryptedApiKey String?
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
 model Book {
   id              String   @id @default(cuid())
   title           String
@@ -20,9 +58,19 @@ model Book {
   totalParagraphs Int
   createdAt       DateTime @default(now())
 
+  // Nullable only because books predate authentication: the migration that
+  // added this column had to run against a database that already had rows.
+  // Every query filters on it, so an unclaimed book is invisible until
+  // `bun run user:create` assigns it — which the first user created does
+  // automatically. Treat it as required in application code.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   paragraphs    Paragraph[]
   progress      ReadingProgress?
   glossaryTerms GlossaryTerm[]
+
+  @@index([userId])
 }
 
 model Paragraph {

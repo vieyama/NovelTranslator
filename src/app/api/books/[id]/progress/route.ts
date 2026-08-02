@@ -1,4 +1,5 @@
 import { ProgressUpdateError, setLastReadIndex } from "@/lib/reader";
+import { UnauthorizedError, requireApiUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -28,10 +29,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   try {
-    const progress = await setLastReadIndex(id, lastReadIndex);
+    const user = await requireApiUser();
+    const progress = await setLastReadIndex(id, user.id, lastReadIndex);
 
     return Response.json({ progress });
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+
     if (error instanceof ProgressUpdateError) {
       return Response.json({ error: error.message }, { status: error.status });
     }

@@ -10,7 +10,9 @@ A personal (single-user, local-first) application to:
    user never has to manually search for where they left off.
 
 Non-goals (out of scope for now):
-- Multi-user / auth
+- ~~Multi-user / auth~~ — **superseded**: email+password auth and per-user
+  libraries were added later, at explicit user request, once the app was
+  deployed to an internet-facing VPS. See §8.
 - Publishing / sharing translated output
 - Real-time word-by-word streaming translation (translation stays batch-based)
 
@@ -491,7 +493,103 @@ and why:
   moot now — Bun + `pg`); and the `postgres` → `db` service rename that left
   `@postgres:5432` in both `DATABASE_URL`s.
 
-## 8. MVP Scope (Phase 1)
+## 8. Authentication & AI Settings
+
+Added after the MVP, at explicit user request — this supersedes CLAUDE.md's
+original "no auth/session management needed", which described a single-user
+app on a local machine, not the internet-facing VPS instance.
+
+### 8.1 Authentication
+
+- **NextAuth v5 (Auth.js), Credentials provider, email + password.**
+  `strategy: "jwt"` is forced by that provider: there is no OAuth callback to
+  hang a database session off. The user id is copied into the token so every
+  request can scope queries without re-reading the user row.
+- **No public sign-up.** Accounts come from `bun run user:create` only. The
+  instance is reachable from the internet, and an open registration form on it
+  would let anyone create an account.
+- **Passwords are scrypt** (`src/lib/password.ts`), from `node:crypto` rather
+  than bcrypt/argon2 — both of those ship native bindings, and this project has
+  already lost time to one (§7.1). Parameters are stored alongside each hash, so
+  raising the cost later doesn't invalidate existing passwords.
+- **Login does not reveal whether an account exists.** A missing user is still
+  verified against a dummy hash so the timing matches, and the error text is the
+  same either way.
+- **`src/proxy.ts`, not `middleware.ts`** — Next 16 renamed the convention and
+  Proxy now defaults to the Node.js runtime. It only checks that a session
+  cookie is *present*, and covers page routes; `/api/*` is excluded so an
+  expired session gets a JSON 401 rather than a 307 into an HTML login page that
+  `fetch` cannot parse. **It is a redirect, not the security boundary** — real
+  verification is `requireUser` / `requireApiUser` (`src/lib/session.ts`), which
+  every protected page and route calls. A new API route is not protected by the
+  proxy and must call one of them.
+
+### 8.2 Per-user data
+
+`Book.userId` scopes the library; paragraphs, progress, and glossary terms
+follow their book. Every entry point taking a book id goes through
+`assertBookOwned` (`src/lib/ownership.ts`) or a `findFirst({ id, userId })`.
+
+- **Someone else's book is a 404, never a 403.** A 403 would confirm the id
+  exists, which is exactly what a probe is looking for.
+- `userId` is **nullable** only because books predate authentication — the
+  migration had to run against a database that already had rows. The first
+  account created claims every unowned book automatically; after that they stay
+  unowned and invisible, on the grounds that a second user must not inherit
+  someone else's library.
+
+### 8.3 Encrypted API keys
+
+Users store their own provider API key, so it has to be encrypted at rest.
+Envelope encryption, AES-256-GCM throughout (`src/lib/crypto.ts`):
+
+```
+APP_ENCRYPTION_KEY (env, never in the DB)
+  └─ wraps ─> User.encryptedDek          (AAD = user id)
+                └─ decrypts to ─> DEK    (per user, memory only)
+                                    └─ encrypts ─> AiProviderCredential.encryptedApiKey
+                                                   (AAD = "<userId>:<provider>")
+```
+
+**Why the master key is in the environment and not the user table.** The
+original design put the key in the database, wrapped with something derived
+from the username. That protects nothing: username is not a secret and lives in
+the same table, so anyone holding a database dump holds every ingredient needed
+to unwrap it. The root of trust has to sit outside the data it protects — with
+it in `.env`, a stolen dump is inert.
+
+**The user id is still mixed in, as AAD rather than as key material.** GCM
+authenticates associated data without encrypting it and refuses to decrypt when
+it doesn't match, which binds each ciphertext to its owner: moving a wrapped DEK
+or an encrypted key into another user's row makes it fail to decrypt instead of
+working. That is the property the original "combine with the username" idea was
+reaching for, implemented so it actually holds.
+
+Consequences worth knowing:
+
+- **Losing `APP_ENCRYPTION_KEY` makes every stored API key unreadable.** Not
+  recoverable by design. Users re-enter theirs in Settings; nothing else is lost.
+- Ciphertexts are `v1.<iv>.<tag>.<ciphertext>` (base64url). The version prefix
+  exists so key rotation doesn't have to guess at the format of old rows.
+- The plaintext key **never goes back to the browser** — the settings page shows
+  only a mask (`AIza…3456`) derived by decrypting server-side.
+- Unwrapped DEKs are never cached across requests. Caching one would keep a
+  user's data key alive in a process serving every other user.
+
+### 8.4 Settings resolution order
+
+Every value is **user setting → server env var → built-in default**, so an
+install that has never opened Settings behaves exactly as it did before this
+feature, and a user with no key of their own rides on the server's.
+
+`AiProviderCredential` is one row per (user, provider), so switching provider in
+Settings doesn't discard the model and key configured for the other one.
+
+**The provider clients no longer cache their SDK client at module scope.** That
+was safe while the key came from one env var; with per-user keys it would pin
+the first user's key into the module and bill every later request to them.
+
+## 9. MVP Scope (Phase 1)
 
 1. Import `.txt` only, for now (easiest to parse).
 2. Manually-triggered batch translation ("Translate next batch" button), Gemini
@@ -499,7 +597,7 @@ and why:
 3. Simple reader: paragraph list + translated/not-translated status.
 4. Auto-resume for both read and translate position.
 
-## 9. Phase 2 (after MVP is working)
+## 10. Phase 2 (after MVP is working)
 
 - Support `.epub` and `.pdf`.
 - Side-by-side bilingual view.
@@ -508,7 +606,7 @@ and why:
   primary provider's limit is hit.
 - Export translated output to a new `.txt`/`.epub` file.
 
-## 10. Open Questions
+## 11. Open Questions
 
 - Reader layout preference: paragraph list, or paginated like an e-reader?
 - Does the MVP need a full multi-book library, or is a single active book enough

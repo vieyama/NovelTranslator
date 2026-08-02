@@ -6,6 +6,7 @@ import { FinishReason, GoogleGenAI, type GenerateContentResponse } from "@google
 
 import {
   TranslationError,
+  type ProviderConfig,
   type TranslationProvider,
   type TranslationRequest,
   type TranslationResponse,
@@ -35,18 +36,21 @@ const DEFAULT_MODEL = "gemini-flash-latest";
 /** Matches the Claude client's ceiling; a truncated reply fails the batch. */
 const MAX_OUTPUT_TOKENS = 32_000;
 
-let cachedClient: GoogleGenAI | null = null;
+/** No module-level cache — see the note in claudeClient.ts (per-user keys). */
 
-export function createGeminiProvider(): TranslationProvider {
+export function createGeminiProvider(config: ProviderConfig): TranslationProvider {
   return {
     id: "gemini",
-    translateBatch,
+    translateBatch: (request) => translateBatch(request, config),
   };
 }
 
-async function translateBatch(request: TranslationRequest): Promise<TranslationResponse> {
-  const client = getClient();
-  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+async function translateBatch(
+  request: TranslationRequest,
+  config: ProviderConfig,
+): Promise<TranslationResponse> {
+  const client = getClient(config.apiKey);
+  const model = config.model?.trim() || process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
 
   let response: GenerateContentResponse;
 
@@ -86,19 +90,16 @@ async function translateBatch(request: TranslationRequest): Promise<TranslationR
   };
 }
 
-function getClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-
-  if (!apiKey) {
+function getClient(apiKey: string): GoogleGenAI {
+  if (!apiKey.trim()) {
     throw new TranslationError(
-      "GEMINI_API_KEY is not set. Add it to .env.local and restart the dev server.",
+      "Belum ada API key Gemini. Tambahkan di halaman Pengaturan, atau set GEMINI_API_KEY di server.",
       "missing_api_key",
-      500,
+      400,
     );
   }
 
-  cachedClient ??= new GoogleGenAI({ apiKey });
-  return cachedClient;
+  return new GoogleGenAI({ apiKey });
 }
 
 /**

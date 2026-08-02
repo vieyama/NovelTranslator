@@ -1,13 +1,23 @@
 import { BookImportError, createBookFromUpload, listBooksWithProgress } from "@/lib/books";
+import { UnauthorizedError, requireApiUser } from "@/lib/session";
 
 // pg needs Node's TCP/TLS sockets, so this route cannot run on the edge.
 export const runtime = "nodejs";
 
 /** GET /api/books — library list with progress summary (SPEC.md §4). */
 export async function GET() {
-  const books = await listBooksWithProgress();
+  try {
+    const user = await requireApiUser();
 
-  return Response.json({ books });
+    return Response.json({ books: await listBooksWithProgress(user.id) });
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+
+    console.error("Failed to list books:", error);
+    return Response.json({ error: "Failed to list books." }, { status: 500 });
+  }
 }
 
 /**
@@ -37,7 +47,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    const user = await requireApiUser();
     const book = await createBookFromUpload({
+      userId: user.id,
       file,
       title: asString(formData.get("title")),
       author: asString(formData.get("author")),
@@ -57,6 +69,10 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+
     if (error instanceof BookImportError) {
       return Response.json({ error: error.message }, { status: error.status });
     }

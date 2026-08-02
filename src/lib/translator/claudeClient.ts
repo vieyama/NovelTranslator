@@ -1,11 +1,12 @@
 // Server-only: importing this from a Client Component would pull secrets
-// and/or native bindings into the browser bundle. Holds ANTHROPIC_API_KEY.
+// and/or native bindings into the browser bundle. Handles API keys.
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 
 import {
   TranslationError,
+  type ProviderConfig,
   type TranslationProvider,
   type TranslationRequest,
   type TranslationResponse,
@@ -35,20 +36,33 @@ const MAX_TOKENS = 32_000;
  */
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
-let cachedClient: Anthropic | null = null;
+/**
+ * No module-level client cache.
+ *
+ * There used to be one (`cachedClient ??= new Anthropic({ apiKey })`), which
+ * was safe while the key came from a single env var. It is not safe now that
+ * keys are per user (SPEC.md §8): the first request would pin one user's key
+ * into the module and every later request — from any user — would translate
+ * with it, billing the wrong account. Constructing a client per batch costs
+ * nothing next to the API call itself.
+ */
 
-export function createClaudeProvider(): TranslationProvider {
+export function createClaudeProvider(config: ProviderConfig): TranslationProvider {
   return {
     // Matches the TRANSLATION_PROVIDER value, so the API response names the
     // provider the same way the config does.
     id: "claude",
-    translateBatch,
+    translateBatch: (request) => translateBatch(request, config),
   };
 }
 
-async function translateBatch(request: TranslationRequest): Promise<TranslationResponse> {
-  const client = getClient();
-  const model = process.env.TRANSLATION_MODEL?.trim() || DEFAULT_MODEL;
+async function translateBatch(
+  request: TranslationRequest,
+  config: ProviderConfig,
+): Promise<TranslationResponse> {
+  const client = getClient(config.apiKey);
+  // User setting first, then the server env var, then the built-in default.
+  const model = config.model?.trim() || process.env.TRANSLATION_MODEL?.trim() || DEFAULT_MODEL;
   const effort = process.env.TRANSLATION_EFFORT?.trim() || DEFAULT_EFFORT;
 
   let message: Anthropic.Beta.Messages.BetaMessage;
@@ -96,19 +110,16 @@ async function translateBatch(request: TranslationRequest): Promise<TranslationR
   };
 }
 
-function getClient(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-
-  if (!apiKey) {
+function getClient(apiKey: string): Anthropic {
+  if (!apiKey.trim()) {
     throw new TranslationError(
-      "ANTHROPIC_API_KEY is not set. Add it to .env.local and restart the dev server.",
+      "Belum ada API key Claude. Tambahkan di halaman Pengaturan, atau set ANTHROPIC_API_KEY di server.",
       "missing_api_key",
-      500,
+      400,
     );
   }
 
-  cachedClient ??= new Anthropic({ apiKey });
-  return cachedClient;
+  return new Anthropic({ apiKey });
 }
 
 /** Anything other than a clean finish means the batch must not be saved. */

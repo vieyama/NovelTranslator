@@ -4,6 +4,7 @@ import "server-only";
 
 import { DEFAULT_BOOK_SORT, type BookSort } from "@/lib/books-schema";
 import { prisma } from "@/lib/db";
+import { BookAccessError } from "@/lib/ownership";
 import { EpubParseError, parse as parseEpub } from "@/lib/parser/epub";
 import { parse as parseTxt } from "@/lib/parser/txt";
 import type { ParsedParagraph } from "@/lib/parser/types";
@@ -29,6 +30,8 @@ export class BookImportError extends Error {
 }
 
 export interface CreateBookInput {
+  /** Owner of the new book — books are per-user (SPEC.md §8). */
+  userId: string;
   file: File;
   title?: string | null;
   author?: string | null;
@@ -38,7 +41,7 @@ export interface CreateBookInput {
  * Parses an uploaded novel and persists Book + Paragraph[] + initial
  * ReadingProgress (both indexes at -1), per SPEC.md §3.1.
  */
-export async function createBookFromUpload({ file, title, author }: CreateBookInput) {
+export async function createBookFromUpload({ userId, file, title, author }: CreateBookInput) {
   const format = detectFormat(file.name);
 
   if (file.size === 0) {
@@ -66,6 +69,7 @@ export async function createBookFromUpload({ file, title, author }: CreateBookIn
   return prisma.$transaction(async (tx) => {
     const book = await tx.book.create({
       data: {
+        userId,
         title: resolvedTitle,
         author: author?.trim() || null,
         sourceFormat: format,
@@ -101,14 +105,16 @@ export async function createBookFromUpload({ file, title, author }: CreateBookIn
  * (schema.prisma) — verified in Phase 2 to leave no orphan rows. Translated
  * text is destroyed too; this is irreversible, so the UI must confirm first.
  */
-export async function deleteBook(bookId: string): Promise<{ title: string }> {
-  const book = await prisma.book.findUnique({
-    where: { id: bookId },
+export async function deleteBook(bookId: string, userId: string): Promise<{ title: string }> {
+  // Scoped by owner, so deleting someone else's book is a 404 rather than a
+  // successful cascade (SPEC.md §8 — this is the one irreversible action).
+  const book = await prisma.book.findFirst({
+    where: { id: bookId, userId },
     select: { id: true, title: true },
   });
 
   if (!book) {
-    throw new BookImportError(`Book ${bookId} not found.`, 404);
+    throw new BookImportError(new BookAccessError(bookId).message, 404);
   }
 
   await prisma.book.delete({ where: { id: book.id } });
@@ -132,9 +138,11 @@ export interface BookSummary {
 
 /** Library listing with the progress summary the /books page needs (SPEC.md §3.4). */
 export async function listBooksWithProgress(
+  userId: string,
   sort: BookSort = DEFAULT_BOOK_SORT,
 ): Promise<BookSummary[]> {
   const books = await prisma.book.findMany({
+    where: { userId },
     // Newest-first is the base order, then `sort` is applied to the derived
     // summaries below. Sorting can't be pushed entirely into the query: the
     // progress options rank by percentages that don't exist as columns —

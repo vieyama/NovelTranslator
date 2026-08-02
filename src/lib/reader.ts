@@ -3,6 +3,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
+import { BookAccessError } from "@/lib/ownership";
 import {
   READER_PAGE_SIZE,
   fromForPage,
@@ -32,10 +33,14 @@ export type { ReaderPage, ReaderParagraph };
  */
 export async function getReaderPage(
   bookId: string,
+  userId: string,
   requestedPage?: number,
 ): Promise<ReaderPage | null> {
-  const book = await prisma.book.findUnique({
-    where: { id: bookId },
+  // Ownership is part of the lookup, not a check after it: a book belonging to
+  // someone else reads as "no such book" (SPEC.md §8), which is what the caller
+  // renders as a 404.
+  const book = await prisma.book.findFirst({
+    where: { id: bookId, userId },
     include: { progress: true },
   });
 
@@ -95,14 +100,14 @@ export class ProgressUpdateError extends Error {
  * Unlike `lastTranslatedIndex`, this may move backwards: re-reading an earlier
  * chapter is a normal thing to do.
  */
-export async function setLastReadIndex(bookId: string, lastReadIndex: number) {
-  const book = await prisma.book.findUnique({
-    where: { id: bookId },
+export async function setLastReadIndex(bookId: string, userId: string, lastReadIndex: number) {
+  const book = await prisma.book.findFirst({
+    where: { id: bookId, userId },
     select: { totalParagraphs: true },
   });
 
   if (!book) {
-    throw new ProgressUpdateError(`Book ${bookId} not found.`, 404);
+    throw new ProgressUpdateError(new BookAccessError(bookId).message, 404);
   }
 
   if (!Number.isInteger(lastReadIndex)) {

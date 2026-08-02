@@ -6,6 +6,8 @@ import { DeleteBookButton } from "@/components/library/DeleteBookButton";
 import { UploadBookForm } from "@/components/library/UploadBookForm";
 import { listBooksWithProgress } from "@/lib/books";
 import { parseBookSort } from "@/lib/books-schema";
+import { SignOutButton } from "@/components/auth/SignOutButton";
+import { requireUser } from "@/lib/session";
 import { pageForIndex } from "@/lib/reader-schema";
 
 /** Library view (SPEC.md §3.4). Always reads live progress from the DB. */
@@ -18,13 +20,27 @@ export default async function BooksPage({
 }: {
   searchParams: Promise<{ sort?: string }>;
 }) {
+  const user = await requireUser("/books");
   const { sort } = await searchParams;
   const activeSort = parseBookSort(sort);
-  const books = await listBooksWithProgress(activeSort);
+  const books = await listBooksWithProgress(user.id, activeSort);
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6">
-      <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Perpustakaan</h1>
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-sm text-zinc-500">{user.email}</span>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/settings"
+            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            Pengaturan
+          </Link>
+          <SignOutButton />
+        </div>
+      </div>
+
+      <h1 className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Perpustakaan</h1>
       <p className="mt-1 text-sm text-zinc-500">
         {books.length} buku · progres tersimpan otomatis per paragraf.
       </p>

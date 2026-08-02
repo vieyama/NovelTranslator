@@ -1,4 +1,5 @@
 import { GlossaryError, deleteGlossaryTerm, updateGlossaryTerm } from "@/lib/glossary";
+import { UnauthorizedError, requireApiUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,8 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
-    const term = await updateGlossaryTerm(id, termId, (body ?? {}) as Record<string, unknown>);
+    const user = await requireApiUser();
+    const term = await updateGlossaryTerm(id, user.id, termId, (body ?? {}) as Record<string, unknown>);
 
     return Response.json({ term });
   } catch (error) {
@@ -35,7 +37,8 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   const { id, termId } = await params;
 
   try {
-    await deleteGlossaryTerm(id, termId);
+    const user = await requireApiUser();
+    await deleteGlossaryTerm(id, user.id, termId);
 
     return new Response(null, { status: 204 });
   } catch (error) {
@@ -44,6 +47,10 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 }
 
 function toResponse(error: unknown, fallback: string): Response {
+  if (error instanceof UnauthorizedError) {
+    return Response.json({ error: error.message }, { status: error.status });
+  }
+
   if (error instanceof GlossaryError) {
     return Response.json({ error: error.message }, { status: error.status });
   }
