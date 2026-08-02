@@ -54,6 +54,16 @@ bun run dev
 > database; if it is lost, every stored key becomes unreadable and has to be
 > re-entered in Settings (SPEC.md §8.3).
 
+On the VPS the first account is created for you: set `BOOTSTRAP_USER_EMAIL` and
+`BOOTSTRAP_USER_PASSWORD` and the `migrate` service creates it after running
+migrations, adopting any books that predate authentication. An account that
+already exists is never modified. To add one later:
+
+```bash
+docker compose run --rm migrate \
+  bunx tsx --conditions=react-server scripts/create-user.ts you@example.com
+```
+
 Full stack in Docker (what the VPS runs):
 
 ```bash

@@ -655,6 +655,28 @@ Notes:
         having written nothing, silently. Now one interface for interactive
         use, and a separate read-stdin-to-end path for piped input so the
         script is scriptable.
+      - **Deploying this to an existing production database needed two extra
+        pieces, both found by simulating the upgrade rather than reasoning
+        about it.** Restored a database at the old schema, filled it with
+        production-like rows, then ran `prisma migrate deploy`: the migration
+        is purely additive and book, paragraphs, glossary and both progress
+        watermarks (1200/900) all survived. But every book came out with
+        `userId = NULL`, and since all queries filter by owner the library
+        renders *empty* — indistinguishable from data loss to anyone looking
+        at it.
+        1. Accounts cannot be created on the VPS from the production image:
+           `runner` holds only `.next/standalone`, with no `scripts/`, no
+           `tsx`, no full `node_modules`. The `migrate` service (built from
+           `builder`) is the only image that can, so it now carries
+           `APP_ENCRYPTION_KEY` as well.
+        2. `scripts/bootstrap-user.ts` + `BOOTSTRAP_USER_*` create the default
+           account right after `migrate deploy`, which adopts those orphaned
+           books automatically — no SSH step on first deploy. It never touches
+           an existing account: re-applying the password every deploy would
+           undo a password change and leave a stale Vault entry as a permanent
+           way in. Verified across all five paths (unset, half-set, weak
+           password, create, re-deploy), including that the original password
+           still verifies and a changed Vault value does not.
       - Verified: 18 crypto/password checks (envelope round-trip, cross-user
         and cross-provider AAD rejection, tampered-ciphertext rejection, and
         that stolen rows without the env key cannot be decrypted), plus 27

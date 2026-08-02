@@ -35,6 +35,10 @@ steps:
         from_secret: APP_ENCRYPTION_KEY
       AUTH_URL:
         from_secret: AUTH_URL
+      BOOTSTRAP_USER_EMAIL:
+        from_secret: BOOTSTRAP_USER_EMAIL
+      BOOTSTRAP_USER_PASSWORD:
+        from_secret: BOOTSTRAP_USER_PASSWORD
     commands:
       # No DATABASE_URL here on purpose: docker-compose.yml derives the
       # container-side URL from POSTGRES_* with host `db` (the service name).
@@ -53,6 +57,8 @@ steps:
         AUTH_SECRET=$${AUTH_SECRET}
         APP_ENCRYPTION_KEY=$${APP_ENCRYPTION_KEY}
         AUTH_URL=$${AUTH_URL}
+        BOOTSTRAP_USER_EMAIL=$${BOOTSTRAP_USER_EMAIL}
+        BOOTSTRAP_USER_PASSWORD=$${BOOTSTRAP_USER_PASSWORD}
         COMPOSE_PROJECT_NAME=novel-translator
         EOF
 
@@ -150,3 +156,17 @@ name: AUTH_URL
 get:
   path: drone/data/vieyama/novel-translator
   name: AUTH_URL
+
+---
+kind: secret
+name: BOOTSTRAP_USER_EMAIL
+get:
+  path: drone/data/vieyama/novel-translator
+  name: BOOTSTRAP_USER_EMAIL
+
+---
+kind: secret
+name: BOOTSTRAP_USER_PASSWORD
+get:
+  path: drone/data/vieyama/novel-translator
+  name: BOOTSTRAP_USER_PASSWORD

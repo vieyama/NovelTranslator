@@ -35,9 +35,29 @@ services:
       context: .
       dockerfile: Dockerfile
       target: builder
-    command: bunx prisma migrate deploy
+    # Migrate, then create the default account if BOOTSTRAP_USER_* is set and
+    # that email doesn't exist yet. The second step is what stops the first
+    # deploy from showing an empty library: books predating auth are unowned,
+    # and the first account created adopts them.
+    command: >
+      sh -c "bunx prisma migrate deploy &&
+             bunx tsx --conditions=react-server scripts/bootstrap-user.ts"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+      # Needed to wrap the new user's data key. This is the only service built
+      # from the `builder` stage, i.e. the one image that still has scripts/ and
+      # tsx — the production `runner` image holds just .next/standalone and
+      # could not run these scripts.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required}
+      # Default account. Optional: leave unset and create accounts by hand with
+      #   docker compose run --rm migrate \
+      #     bunx tsx --conditions=react-server scripts/create-user.ts you@example.com
+      # An existing account is never modified, so changing the password here
+      # after first deploy has no effect — by design, so a stale value can't
+      # become a permanent backdoor.
+      BOOTSTRAP_USER_EMAIL: ${BOOTSTRAP_USER_EMAIL:-}
+      BOOTSTRAP_USER_PASSWORD: ${BOOTSTRAP_USER_PASSWORD:-}
+      BOOTSTRAP_USER_NAME: ${BOOTSTRAP_USER_NAME:-}
     depends_on:
       db:
         condition: service_healthy

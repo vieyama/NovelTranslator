@@ -524,6 +524,39 @@ app on a local machine, not the internet-facing VPS instance.
   every protected page and route calls. A new API route is not protected by the
   proxy and must call one of them.
 
+### 8.1.1 Creating accounts
+
+Two entry points, both going through `createUser` in `src/lib/users.ts` so the
+DEK wrapping and the book-claiming rule can't drift apart:
+
+- **`bun run user:create [email] [name]`** — interactive, prompts for the
+  password without echoing it.
+- **`scripts/bootstrap-user.ts`** — reads `BOOTSTRAP_USER_EMAIL` /
+  `BOOTSTRAP_USER_PASSWORD` / `BOOTSTRAP_USER_NAME`, and is run by the `migrate`
+  service immediately after `prisma migrate deploy` on every deploy. This is
+  what makes the first production deploy work without an SSH session.
+
+**Neither can run in the production image.** `runner` contains only
+`.next/standalone`, `public`, and `.next/static` — no `scripts/`, no `tsx`, no
+full `node_modules`. The `migrate` service is built from the `builder` stage,
+which is the only image that still has them, so it carries `APP_ENCRYPTION_KEY`
+too (it needs to wrap the new user's DEK). To add an account later:
+
+```bash
+docker compose run --rm migrate \
+  bunx tsx --conditions=react-server scripts/create-user.ts you@example.com
+```
+
+**Bootstrap never modifies an existing account.** If the email is already
+present it is left alone, password included. Re-applying the password on every
+deploy would silently undo a password change and turn a stale Vault entry into a
+permanent way in. The consequence is that the bootstrap password is effectively
+permanent until a change-password path exists.
+
+Setting only one of the two variables is treated as a misconfiguration and
+reported, not silently skipped — otherwise a typo would produce an instance
+nobody can log into, with nothing in the deploy log to say why.
+
 ### 8.2 Per-user data
 
 `Book.userId` scopes the library; paragraphs, progress, and glossary terms
@@ -537,6 +570,12 @@ follow their book. Every entry point taking a book id goes through
   account created claims every unowned book automatically; after that they stay
   unowned and invisible, on the grounds that a second user must not inherit
   someone else's library.
+- **This is why the first deploy would otherwise look like data loss.** The
+  migration is purely additive (`ADD COLUMN "userId" TEXT`, plus new tables —
+  verified against a populated copy of the schema: book, paragraphs, glossary
+  and both progress watermarks all survived). But every query filters by owner,
+  so until an account exists the library renders empty. §8.1.1's bootstrap step
+  closes that window automatically.
 
 ### 8.3 Encrypted API keys
 

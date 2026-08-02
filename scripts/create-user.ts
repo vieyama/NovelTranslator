@@ -18,19 +18,26 @@ import { stdin, stdout } from "node:process";
 import { Writable } from "node:stream";
 
 import { prisma } from "../src/lib/db";
-import { generateDek, wrapDek } from "../src/lib/crypto";
-import { hashPassword } from "../src/lib/password";
-
-const MIN_PASSWORD_LENGTH = 10;
+import {
+  MIN_PASSWORD_LENGTH,
+  UserCreateError,
+  assertValidEmail,
+  countOrphanBooks,
+  createUser,
+  emailExists,
+  normalizeEmail,
+} from "../src/lib/users";
 
 async function main() {
-  const email = (process.argv[2] ?? (await ask("Email: "))).trim().toLowerCase();
+  const email = normalizeEmail(process.argv[2] ?? (await ask("Email: ")));
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    fail(`"${email}" doesn't look like an email address.`);
+  try {
+    assertValidEmail(email);
+  } catch (error) {
+    fail(error instanceof UserCreateError ? error.message : String(error));
   }
 
-  if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
+  if (await emailExists(email)) {
     fail(`A user with the email ${email} already exists.`);
   }
 
@@ -44,49 +51,20 @@ async function main() {
     fail("Passwords don't match.");
   }
 
-  // Fail before writing anything if the master key is missing or malformed —
-  // a user row whose DEK can't be wrapped would be unable to store an API key.
-  const passwordHash = await hashPassword(password);
+  const result = await createUser({ email, name, password });
 
-  const user = await prisma.$transaction(async (tx) => {
-    // Two steps because the DEK is bound to the user id as AAD, and the id
-    // doesn't exist until the row does. Same transaction, so a row can never
-    // be left behind with the placeholder.
-    const created = await tx.user.create({
-      data: { email, name: name || null, passwordHash, encryptedDek: "" },
-    });
+  console.log(`\nCreated user ${result.email} (${result.id}).`);
 
-    return tx.user.update({
-      where: { id: created.id },
-      data: { encryptedDek: wrapDek(generateDek(), created.id) },
-    });
-  });
+  if (result.claimedBooks > 0) {
+    console.log(`Assigned ${result.claimedBooks} pre-existing book(s) to this account.`);
+  }
 
-  console.log(`\nCreated user ${user.email} (${user.id}).`);
-
-  // Books uploaded before authentication existed have no owner, and every
-  // query now filters by one — so without this they'd be invisible. Only the
-  // very first user inherits them; a second user must not be handed someone
-  // else's library.
-  const totalUsers = await prisma.user.count();
-
-  if (totalUsers === 1) {
-    const { count } = await prisma.book.updateMany({
-      where: { userId: null },
-      data: { userId: user.id },
-    });
-
-    if (count > 0) {
-      console.log(`Assigned ${count} pre-existing book(s) to this account.`);
-    }
-  } else {
-    const orphans = await prisma.book.count({ where: { userId: null } });
-    if (orphans > 0) {
-      console.log(
-        `\nNote: ${orphans} book(s) still have no owner. Only the first account ` +
-          `claims them automatically; assign them deliberately if they belong here.`,
-      );
-    }
+  const orphans = await countOrphanBooks();
+  if (orphans > 0) {
+    console.log(
+      `\nNote: ${orphans} book(s) still have no owner. Only the first account ` +
+        `claims them automatically; assign them deliberately if they belong here.`,
+    );
   }
 
   console.log("\nSign in at /login.");
