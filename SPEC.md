@@ -136,15 +136,28 @@ right before that gap (or the last paragraph, if there is no gap). This means:
   reuses the same `PATCH /api/books/:id/progress` endpoint, just with
   `lastReadIndex` set to `orderIndex - 1` instead of `orderIndex`.
 - The header has two "jump to my position" shortcuts: **Ke posisi baca
-  terakhir** (→ the page containing `lastReadIndex + 1`) and **Ke batas
-  terjemahan terakhir** (→ the page containing `lastTranslatedIndex + 1`).
-  Plain `?page=N` navigation via `pageForIndex` — no fetch, no client state.
-  Since browsing via numeric pagination can leave the reader far from either
-  watermark, these are the fast way back. Whichever one matches the page
-  already being viewed renders as a real disabled `<button>` rather than a
-  no-op link, the same convention as `Pagination.tsx`'s disabled ends.
-- If the paragraph the user wants to read hasn't been translated yet → a
-  "Translate more" button triggers the next batch directly, without navigating away.
+  terakhir** and **Ke batas terjemahan terakhir**. Each goes to
+  `?page=N#p-{index}` — the page holding that paragraph *and* the paragraph
+  itself, using the `id="p-{orderIndex}"` anchor `ParagraphBlock` renders.
+  Landing at the top of a 30-paragraph page and hunting for the spot defeated
+  the point; the page number alone is not the position.
+  - The page comes from `pageForIndex(index)`, not `index + 1`, so the button
+    lands on the paragraph it names. The two differ only when the target is the
+    last paragraph of a page, where `+ 1` would jump a page past it.
+  - **Clicking while already on that page is handled in JS, not by the href.**
+    The link would then point at the URL already showing, so the browser treats
+    it as a no-op and nothing scrolls — precisely the common case of reading on,
+    drifting away, and clicking to get back. The handler scrolls the element
+    directly instead, honouring `prefers-reduced-motion`.
+  - A `-1` watermark (nothing read or translated yet) renders a real
+    `<button disabled>` rather than a dead link, per `Pagination.tsx`'s
+    convention.
+- **"Terjemahkan batch dari #N"** lives in the header, not inline among the
+  paragraphs. Inline, it sat beside the first untranslated paragraph *on screen*
+  and read as "this is what will be translated" — but the batch always starts at
+  the first untranslated paragraph in the whole book, which can be far earlier
+  (or later) than anything visible. Out of the paragraph flow there is no
+  position to misread, and the label names the real starting index outright.
 - Every untranslated paragraph also has its own "Terjemahkan dari sini" control
   (`TranslateFromHereButton`), which calls `POST /api/translate` with
   `fromIndex` set to that paragraph — the reader-side entry point for §3.2's
@@ -242,6 +255,15 @@ separate "chapter" or "section" state to fall out of sync with.
   the server page and the client control. Ranking happens in
   `listBooksWithProgress` on the derived summaries rather than in the SQL, since
   the progress orders key off percentages that aren't columns.
+- **Progress percentages use different bases, on purpose.** "Diterjemahkan" is
+  the *count* of paragraphs with translated text; "Dibaca" is the
+  `lastReadIndex` watermark. Reading is genuinely "read up to here", so a
+  watermark describes it exactly. Translation is not: `fromIndex` (§3.2) lets a
+  batch run ahead of a gap, and `lastTranslatedIndex` then stops at that gap —
+  a book with 20 paragraphs translated but a gap at the start reported **0%**
+  next to a "20/2879" taken from the real count. The number and the percentage
+  now describe the same thing, and the sort comparators use the same basis as
+  the figure they order by.
 - **Delete button** per book (`DeleteBookButton`) calling
   `DELETE /api/books/:id`. Deletion cascades to paragraphs, progress, and
   glossary terms — including all translated text — so the UI confirms with an

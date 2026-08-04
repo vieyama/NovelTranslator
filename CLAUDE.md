@@ -163,6 +163,14 @@ Client Component, Node just doesn't set the condition Next does.
   re-focusing restores what was lost; if it doesn't, a `key` change is the real
   bug. Only reclaim focus while `document.body` still holds it, so focus the
   user has deliberately moved isn't yanked back.
+- **A link whose href is the URL you're already on does nothing.** Anchor
+  navigation (`?page=5#p-137`) scrolls correctly when it changes the URL, and
+  silently no-ops when it doesn't — so a "jump back to my position" control
+  works from elsewhere and appears broken exactly where it's needed most, after
+  the reader has scrolled away on that same page. Handle that case in JS
+  (`scrollIntoView`) rather than trusting the href; `ReaderView`'s
+  `JumpToParagraphButton` does. Pair the anchor with `scroll-mt-*` so a sticky
+  header doesn't cover the target.
 - **Windowed rendering, not exhaustive rendering, for anything whose count
   scales with the book.** Paragraphs are fetched one page at a time
   (`READER_PAGE_SIZE`, Phase 4); page-*number* lists in `Pagination.tsx` are

@@ -687,6 +687,43 @@ Notes:
         list, and that the plaintext key never reaches the browser. A full
         `pg_dump` contains neither the API key nor any password.
 
+- [x] Reader: scroll-to-paragraph on the position shortcuts, and move the
+      batch-translate button out of the paragraph flow (ad hoc user request)
+      - The two header shortcuts now navigate to `?page=N#p-{index}` and land on
+        the paragraph itself. Target is the **last read / last translated**
+        paragraph, so the page is `pageForIndex(index)` rather than `index + 1`;
+        those differ only at a page boundary, where the old form jumped one page
+        past the thing it named.
+      - **Bug caught by testing, not by reading**: clicking the shortcut while
+        already on that page did nothing, because the href equalled the current
+        URL and the browser skipped the navigation. That is the most common case
+        (read on, drift away, click to return). Fixed by scrolling the element
+        directly when it is already in the DOM, respecting
+        `prefers-reduced-motion`. `scroll-mt-24` on `ParagraphBlock` already
+        kept the sticky bar clear — measured at 96px from the top after the jump.
+      - The batch-translate button moved to the header. Inline it sat next to
+        the first untranslated paragraph on screen and implied *that* index was
+        the batch start, when the batch actually begins at the first
+        untranslated paragraph in the whole book. The user read it exactly that
+        way. Its label now states the real starting index ("Terjemahkan batch
+        dari #0"). The batch anchor itself is unchanged — deliberately, since
+        changing it would leave gaps the watermark-based progress percentage
+        would then misreport.
+      - **Follow-up in the same session**: `translatedPercent` was derived from
+        `lastTranslatedIndex`, which stops at the first gap, so the library
+        could show "Diterjemahkan 20/2879 (0%)" — count and percentage
+        disagreeing on screen. Now counted instead, and the `translation` sort
+        comparator moved to the same basis so ordering matches the figure shown.
+        `readPercent` deliberately stays watermark-based: reading really is
+        "read up to here", with no gap to disagree about. Verified against the
+        exact scenario (0–10 untranslated, 11–30 translated, watermark -1):
+        reads "20/2879 (1%)" where the old formula gave 0%.
+      - Verified in a browser across 12 checks: cross-page jump scrolls and
+        lands 96px from the top, re-click while already there re-scrolls,
+        boundary index stays on its own page, `-1` renders a disabled button,
+        no translate button remains inline, and the header label matches the
+        book-wide next batch start.
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order

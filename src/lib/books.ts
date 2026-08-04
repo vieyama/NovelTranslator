@@ -173,6 +173,7 @@ export async function listBooksWithProgress(
   const summaries = books.map((book) => {
     const lastTranslatedIndex = book.progress?.lastTranslatedIndex ?? -1;
     const lastReadIndex = book.progress?.lastReadIndex ?? -1;
+    const translatedCount = countByBookId.get(book.id) ?? 0;
 
     return {
       id: book.id,
@@ -183,9 +184,18 @@ export async function listBooksWithProgress(
       createdAt: book.createdAt,
       lastTranslatedIndex,
       lastReadIndex,
-      translatedCount: countByBookId.get(book.id) ?? 0,
-      // Indexes are 0-based, so "+ 1" converts a position into a count.
-      translatedPercent: toPercent(lastTranslatedIndex + 1, book.totalParagraphs),
+      translatedCount,
+      // Counted, not derived from `lastTranslatedIndex`.
+      //
+      // That watermark stops at the first untranslated gap, so translating past
+      // one (which `fromIndex` explicitly allows — SPEC.md §3.2) pins it in
+      // place: a book with 20 paragraphs translated but a gap at the very start
+      // would report 0%, right beside a "20/2879" taken from the real count.
+      // The number and the percentage have to describe the same thing.
+      translatedPercent: toPercent(translatedCount, book.totalParagraphs),
+      // Reading, by contrast, genuinely is a watermark — "read up to here" —
+      // so there is no gap for a count to disagree about. "+ 1" turns a 0-based
+      // position into a count.
       readPercent: toPercent(lastReadIndex + 1, book.totalParagraphs),
     };
   });
@@ -200,10 +210,12 @@ export async function listBooksWithProgress(
 /**
  * Progress comparators rank by *ratio*, not by the rounded percentage shown in
  * the UI — otherwise 2/3 and 67/100 would tie at 67% and be ordered by
- * insertion instead of by how far along they actually are. They use the
- * `lastReadIndex` / `lastTranslatedIndex` watermarks, matching what the
- * progress bar draws, rather than `translatedCount`, which can run ahead of the
- * watermark when a batch is translated past a gap (CLAUDE.md).
+ * insertion instead of by how far along they actually are.
+ *
+ * Each uses the same basis as the percentage it sorts by: translation counts
+ * actual translated paragraphs, reading uses the `lastReadIndex` watermark.
+ * Sorting on a different basis than the number on screen would put a book
+ * showing 80% above one showing 90%.
  */
 const BOOK_COMPARATORS: Record<BookSort, (a: BookSummary, b: BookSummary) => number> = {
   recent: (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
@@ -214,8 +226,8 @@ const BOOK_COMPARATORS: Record<BookSort, (a: BookSummary, b: BookSummary) => num
     progressRatio(b.lastReadIndex + 1, b.totalParagraphs) -
     progressRatio(a.lastReadIndex + 1, a.totalParagraphs),
   translation: (a, b) =>
-    progressRatio(b.lastTranslatedIndex + 1, b.totalParagraphs) -
-    progressRatio(a.lastTranslatedIndex + 1, a.totalParagraphs),
+    progressRatio(b.translatedCount, b.totalParagraphs) -
+    progressRatio(a.translatedCount, a.totalParagraphs),
 };
 
 /**

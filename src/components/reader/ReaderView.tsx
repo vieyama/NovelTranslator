@@ -87,10 +87,6 @@ export function ReaderView({ page }: { page: ReaderPage }) {
 
   const { book, progress, paragraphs, pagination } = page;
 
-  // Where the translate prompt belongs: the first untranslated paragraph that
-  // is actually on screen.
-  const firstUntranslatedOnScreen = paragraphs.find((p) => p.translatedText === null)?.orderIndex;
-
   const lastOnScreen = paragraphs.at(-1)?.orderIndex;
 
   // Shared by the page numbers and the jump control, so both navigate through
@@ -146,19 +142,29 @@ export function ReaderView({ page }: { page: ReaderPage }) {
           </div>
         </dl>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          <GoToPageButton
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <JumpToParagraphButton
             label="↩ Ke posisi baca terakhir"
             bookId={book.id}
-            targetPage={pageForIndex(progress.lastReadIndex + 1)}
-            currentPage={pagination.currentPage}
+            targetIndex={progress.lastReadIndex}
           />
-          <GoToPageButton
+          <JumpToParagraphButton
             label="↩ Ke batas terjemahan terakhir"
             bookId={book.id}
-            targetPage={pageForIndex(progress.lastTranslatedIndex + 1)}
-            currentPage={pagination.currentPage}
+            targetIndex={progress.lastTranslatedIndex}
           />
+
+          {/* In the header rather than inline among the paragraphs: sitting next
+              to a specific paragraph made it look like *that* index was what
+              would be translated, when the batch actually starts at the first
+              untranslated paragraph in the whole book. The label names that
+              index outright so there is nothing to infer from placement. */}
+          {page.firstUntranslatedIndex !== null && (
+            <TranslateBatchButton
+              bookId={book.id}
+              startIndex={page.firstUntranslatedIndex}
+            />
+          )}
         </div>
       </header>
 
@@ -193,10 +199,6 @@ export function ReaderView({ page }: { page: ReaderPage }) {
         <div className="divide-y divide-zinc-100 dark:divide-zinc-900">
           {paragraphs.map((paragraph) => (
             <div key={paragraph.orderIndex}>
-              {paragraph.orderIndex === firstUntranslatedOnScreen && (
-                <TranslateBatchButton bookId={book.id} />
-              )}
-
               <ParagraphBlock
                 bookId={book.id}
                 paragraph={paragraph}
@@ -253,23 +255,32 @@ export function ReaderView({ page }: { page: ReaderPage }) {
 const SHORTCUT_BUTTON_BASE = "rounded-md border px-3 py-1.5 text-xs transition-colors";
 
 /**
- * "Jump to my last read/translated position" shortcut. Plain navigation, not
- * a mutation — no fetch, just `?page=N` — already there when the target page
- * equals the current one is rendered as a real disabled `<button>`, since an
- * `<a>` has no accessible disabled state (CLAUDE.md → UI & State Conventions).
+ * "Jump to my last read/translated position" shortcut.
+ *
+ * Navigates to the page holding that paragraph *and* scrolls to the paragraph
+ * itself, via the `#p-{orderIndex}` anchor `ParagraphBlock` already renders.
+ * Landing at the top of a 30-paragraph page and hunting for the spot was the
+ * whole problem — the page number alone isn't the position.
+ *
+ * The page is derived from the target index rather than `index + 1`, so the
+ * button lands on the paragraph it names. Those differ only when the target is
+ * the last paragraph of a page, where "+ 1" would jump a page ahead of the
+ * thing being pointed at.
+ *
+ * A `-1` watermark means nothing has been read (or translated) yet, so there is
+ * no position to jump to: rendered as a real `<button disabled>`, since an
+ * `<a>` has no accessible disabled state (CLAUDE.md).
  */
-function GoToPageButton({
+function JumpToParagraphButton({
   label,
   bookId,
-  targetPage,
-  currentPage,
+  targetIndex,
 }: {
   label: string;
   bookId: string;
-  targetPage: number;
-  currentPage: number;
+  targetIndex: number;
 }) {
-  if (targetPage === currentPage) {
+  if (targetIndex < 0) {
     return (
       <button
         type="button"
@@ -284,7 +295,26 @@ function GoToPageButton({
 
   return (
     <Link
-      href={`/books/${bookId}?page=${targetPage}`}
+      href={`/books/${bookId}?page=${pageForIndex(targetIndex)}#p-${targetIndex}`}
+      onClick={(event) => {
+        const target = document.getElementById(`p-${targetIndex}`);
+
+        // Already on the page that holds it. The href is then identical to the
+        // current URL, so the browser treats the click as a no-op and nothing
+        // scrolls — which is the common case: read on, drift away, click to get
+        // back. Scroll it ourselves instead of navigating.
+        if (!target) return;
+
+        event.preventDefault();
+        target.scrollIntoView({
+          // `scroll-mt-24` on the paragraph keeps it clear of the sticky bar;
+          // scroll-margin applies to scrollIntoView the same as to hash jumps.
+          block: "start",
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "auto"
+            : "smooth",
+        });
+      }}
       className={`${SHORTCUT_BUTTON_BASE} border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900`}
     >
       {label}

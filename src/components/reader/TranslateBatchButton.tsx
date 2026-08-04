@@ -4,12 +4,23 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 /**
- * Inline "translate next batch" control (SPEC.md §3.3).
+ * "Translate next batch" control, in the reader header (SPEC.md §3.3).
  *
- * Rendered where the translated text runs out, so the user never has to leave
- * the reader to keep going.
+ * It used to sit inline next to the first untranslated paragraph on screen,
+ * which read as "this is the paragraph that will be translated" — but the batch
+ * always starts at the first untranslated paragraph in the *whole book*, which
+ * can be far earlier. Moving it out of the paragraph flow removes the false
+ * implication, and `startIndex` states the real starting point outright rather
+ * than leaving it to be inferred from position.
  */
-export function TranslateBatchButton({ bookId }: { bookId: string }) {
+export function TranslateBatchButton({
+  bookId,
+  startIndex,
+}: {
+  bookId: string;
+  /** First untranslated paragraph in the book — where the batch will begin. */
+  startIndex: number;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isRequesting, setIsRequesting] = useState(false);
@@ -54,35 +65,32 @@ export function TranslateBatchButton({ bookId }: { bookId: string }) {
   }
 
   return (
-    <div className="my-6 rounded-lg border border-dashed border-amber-400 bg-amber-50/60 p-4 dark:border-amber-700 dark:bg-amber-950/20">
-      <p className="text-sm text-amber-900 dark:text-amber-200">
-        Paragraf berikutnya belum diterjemahkan.
-      </p>
-
+    <span className="inline-flex flex-wrap items-center gap-2">
       <button
         type="button"
         onClick={translate}
         disabled={busy}
-        className="mt-3 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 disabled:cursor-wait disabled:opacity-70"
+        title={`Batch berikutnya dimulai dari paragraf #${startIndex}`}
+        className="rounded-md border border-amber-500 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 disabled:cursor-wait disabled:opacity-70 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/60"
       >
-        {busy ? "Menerjemahkan…" : "Terjemahkan batch berikutnya"}
+        {busy ? "Menerjemahkan…" : `Terjemahkan batch dari #${startIndex}`}
       </button>
 
       {busy && (
-        <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">
-          Ini memanggil AI dan bisa memakan waktu sampai beberapa menit. Jangan tutup halaman.
-        </p>
+        <span role="status" className="text-xs text-amber-800 dark:text-amber-300">
+          Memanggil AI, bisa beberapa menit. Jangan tutup halaman.
+        </span>
       )}
 
       {lastResult && !busy && (
-        <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-400">{lastResult}</p>
+        <span className="text-xs text-emerald-700 dark:text-emerald-400">{lastResult}</span>
       )}
 
       {error && (
-        <p className="mt-2 text-sm text-red-700 dark:text-red-400">
+        <span role="alert" className="text-xs text-red-700 dark:text-red-400">
           {error} <span className="text-zinc-500">Progress tidak berubah, aman dicoba lagi.</span>
-        </p>
+        </span>
       )}
-    </div>
+    </span>
   );
 }
