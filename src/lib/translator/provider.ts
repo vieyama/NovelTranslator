@@ -2,8 +2,11 @@
 // and/or native bindings into the browser bundle. Pulls in both API clients.
 import "server-only";
 
+import { type AiProviderName } from "@/lib/ai-settings-schema";
+
 import { createClaudeProvider } from "./claudeClient";
 import { createGeminiProvider } from "./geminiClient";
+import { createMistralProvider } from "./mistralClient";
 import { TranslationError, type ProviderConfig, type TranslationProvider } from "./types";
 
 /**
@@ -14,7 +17,14 @@ import { TranslationError, type ProviderConfig, type TranslationProvider } from 
  * regardless of which one is returned.
  */
 
-export type ProviderName = "claude" | "gemini";
+/**
+ * Derived from the settings schema rather than declared again here.
+ *
+ * These were two separate lists, which meant a provider could be offered in
+ * Settings with no factory behind it (or the reverse) and still compile. Now
+ * adding one to `AI_PROVIDERS` fails the build until `FACTORIES` covers it.
+ */
+export type ProviderName = AiProviderName;
 
 const DEFAULT_PROVIDER: ProviderName = "claude";
 
@@ -24,11 +34,14 @@ const ALIASES: Record<string, ProviderName> = {
   anthropic: "claude",
   gemini: "gemini",
   google: "gemini",
+  mistral: "mistral",
+  mistralai: "mistral",
 };
 
 const FACTORIES: Record<ProviderName, (config: ProviderConfig) => TranslationProvider> = {
   claude: createClaudeProvider,
   gemini: createGeminiProvider,
+  mistral: createMistralProvider,
 };
 
 /**
@@ -46,7 +59,7 @@ export function resolveProvider(config: ProviderConfig, requested?: string): Tra
 
   if (!name) {
     throw new TranslationError(
-      `Unknown TRANSLATION_PROVIDER "${raw}". Use "claude" or "gemini".`,
+      `Unknown TRANSLATION_PROVIDER "${raw}". Use "claude", "gemini", or "mistral".`,
       "provider_error",
       500,
     );

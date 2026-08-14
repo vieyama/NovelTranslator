@@ -373,16 +373,39 @@ interface TranslationProvider {
 }
 ```
 
-- `claudeClient.ts` — Anthropic API (implemented in Phase 3, currently the
-  working/tested provider)
-- `geminiClient.ts` — Google Gemini API (added in Phase 5 as a second provider,
-  same interface, selectable via `TRANSLATION_PROVIDER`)
+- `claudeClient.ts` — Anthropic API, via `@anthropic-ai/sdk` (streaming +
+  adaptive thinking + server-side model fallback).
+- `geminiClient.ts` — Google Gemini, via `@google/genai` (typed finish reasons,
+  "thought" parts filtered out of the reply).
+- `mistralClient.ts` — Mistral, via **plain `fetch`, no SDK**.
+  `@mistralai/mistralai` drags in `ws`, `zod`, `zod-to-json-schema` and an
+  OpenTelemetry package to wrap one OpenAI-shaped POST to
+  `https://api.mistral.ai/v1/chat/completions`. The other two clients earn
+  their SDKs — streaming, thinking blocks, typed enums — this one does not, and
+  every dependency is one more thing that can break a Bun build (§7.1). It sets
+  `temperature: 0.2`: the default is loose enough to paraphrase, and the reply
+  must come back with exactly the separator count it was sent.
 
-Both use the exact same prompt template from `TRANSLATION_RULES.md` — only the
-API call differs — so translation style doesn't depend on which provider handled
-a given batch. Provider selection is controlled via config (`.env.local`), with
-optional automatic fallback (try primary, fall back to secondary on rate-limit
-error) as a later enhancement (Phase 7).
+All three use the same prompt from `TRANSLATION_RULES.md` — only the API call
+differs — so translation style doesn't depend on which provider handled a batch.
+
+**Adding a provider is three edits and no migration**, because `provider` is a
+string column and `AiProviderCredential` is keyed by `(userId, provider)`:
+a client file, an entry in `AI_PROVIDERS` (`ai-settings-schema.ts`), and one in
+`ENV_KEY_BY_PROVIDER` (`ai-settings.ts`). `ProviderName` in `provider.ts` is
+**derived from `AI_PROVIDERS`** rather than declared separately — those were
+two independent lists, so a provider could be offered in Settings with no
+factory behind it and still compile. Now `FACTORIES` fails to typecheck until
+it covers the new entry.
+
+Model defaults use `-latest` aliases (`mistral-large-latest`,
+`gemini-flash-latest`) rather than dated names, so they don't rot when a new
+version ships; Settings' "Model lain (isi manual)" covers anything newer than
+the built-in list without a code change.
+
+Provider, model and key are per user (§8.4), falling back to the server env
+vars. Automatic fallback between providers on a rate-limit error is still a
+later enhancement.
 
 ## 7. Configuration
 
@@ -645,6 +668,13 @@ feature, and a user with no key of their own rides on the server's.
 
 `AiProviderCredential` is one row per (user, provider), so switching provider in
 Settings doesn't discard the model and key configured for the other one.
+
+**No provider's API key is required in the environment.** All three are
+`${..:-}` in `docker-compose.yml`, deliberately alike: the per-user key is the
+real one, and failing a deploy over an unused server-wide secret would be
+backwards. A provider with no key anywhere fails at translate time with
+"Belum ada API key untuk X. Tambahkan di halaman Pengaturan." — which is where
+the fix is.
 
 **The provider clients no longer cache their SDK client at module scope.** That
 was safe while the key came from one env var; with per-user keys it would pin

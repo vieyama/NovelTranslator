@@ -724,6 +724,39 @@ Notes:
         no translate button remains inline, and the header label matches the
         book-wide next batch start.
 
+- [x] Add Mistral as a third translation provider (user has a key; ad hoc request)
+      - **No database migration**: `provider` is a string column and
+        `AiProviderCredential` is already keyed by `(userId, provider)`, so the
+        normalised shape chosen during the settings work paid off here.
+      - `mistralClient.ts` uses plain `fetch`, not `@mistralai/mistralai` —
+        that SDK pulls `ws`, `zod`, `zod-to-json-schema` and OpenTelemetry to
+        wrap a single OpenAI-shaped POST. Defensive parsing throughout: content
+        may be a string or an array of typed chunks, and non-text chunks are
+        dropped so nothing but translation can reach `parseResponse`.
+      - **Removed a latent drift**: `ProviderName` in `provider.ts` was declared
+        independently of `AI_PROVIDERS`, so Settings could offer a provider with
+        no factory behind it and still compile. It now derives from the schema —
+        verified by deleting the factory and watching `tsc` fail with
+        "Property 'mistral' is missing in type ...".
+      - **All three provider keys are now optional in `docker-compose.yml`**, on
+        the user's instruction to treat Mistral like the rest. `ANTHROPIC_` and
+        `GEMINI_API_KEY` were still `:?`-required from before per-user keys
+        existed, so a deploy would fail over a server-wide secret for a provider
+        nobody uses from the server. The per-user key in `AiProviderCredential`
+        is the real one; env is only the fallback, and a provider with no key
+        anywhere now fails at translate time with a message pointing at
+        Settings.
+      - Verified: Mistral appears in Settings with its own models and no
+        cross-contamination from the other providers, the key round-trips
+        encrypted and is shown masked only, and a live call against the real
+        endpoint with a deliberately invalid key returns Mistral's own
+        `{"detail":"Invalid API Key"}` — proving URL, method and auth header
+        are right — mapped to `missing_api_key` with progress untouched.
+      - **Not yet verified**: a successful translation. That needs a valid key,
+        so the request body, response parsing, `finish_reason` handling and
+        `usage` field names are still only checked against the documented
+        contract.
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order

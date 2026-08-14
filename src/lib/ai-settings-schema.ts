@@ -31,6 +31,21 @@ export const AI_PROVIDERS = [
       { value: "gemini-pro-latest", label: "Gemini Pro (latest) — tanpa kuota gratis" },
     ],
   },
+  {
+    value: "mistral",
+    label: "Mistral",
+    keyHint: "console.mistral.ai",
+    keyPlaceholder: "…",
+    // `-latest` aliases rather than dated names (`mistral-large-3-25-12`), so
+    // these don't rot when a new version ships. Mistral releases models often;
+    // the form's "Model lain (isi manual)" option covers anything newer than
+    // this list without a code change.
+    models: [
+      { value: "mistral-large-latest", label: "Mistral Large (latest) — paling kuat" },
+      { value: "mistral-medium-latest", label: "Mistral Medium (latest) — seimbang" },
+      { value: "mistral-small-latest", label: "Mistral Small (latest) — paling murah" },
+    ],
+  },
 ] as const;
 
 export type AiProviderName = (typeof AI_PROVIDERS)[number]["value"];

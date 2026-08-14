@@ -93,13 +93,24 @@ services:
       AUTH_URL: ${AUTH_URL:-}
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-claude}
       DEFAULT_MAX_CHARS: ${DEFAULT_MAX_CHARS:-3000}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      # All three optional, and all three treated the same.
+      #
+      # These were `:?` (required) back when a server-wide key was the only way
+      # to translate. Since SPEC.md §8.4 they are just the *fallback*: the real
+      # key is per user, stored encrypted in `AiProviderCredential` and resolved
+      # by `resolveAiConfig`. Demanding an env key for a provider nobody uses
+      # from the server would fail the whole deploy over an unused secret —
+      # and a missing key now surfaces where it can be fixed, as "Belum ada API
+      # key untuk X. Tambahkan di halaman Pengaturan." rather than a boot crash.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       NODE_ENV: production
       # Optional overrides (SPEC.md §7) — uncomment to set a non-default model:
       # TRANSLATION_MODEL: claude-opus-5
       # TRANSLATION_EFFORT: medium
       # GEMINI_MODEL: gemini-flash-latest
+      # MISTRAL_MODEL: mistral-large-latest
     depends_on:
       db:
         condition: service_healthy
