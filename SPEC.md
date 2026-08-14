@@ -247,6 +247,48 @@ separate "chapter" or "section" state to fall out of sync with.
   `next/link`) or `<button>` elements, so Tab/Enter/Space and focus-visible
   styling work without any custom keyboard handling.
 
+### 3.6 Re-translate & Undo
+
+For when one model's output reads badly and another should be tried. Added
+after the multi-provider work, because switching model in Settings was only
+half a workflow without a way to redo what the old one produced.
+
+- **`Paragraph.translatedBy`** records `"provider:model"` for every
+  translation. Without it there is no way to tell which paragraphs came from
+  the model you were unhappy with — which is what makes "redo the bad ones"
+  actionable rather than guesswork. Rows predating the column are null and
+  render as no attribution rather than a guess. The reader shows it as
+  `via <model>` beside each translated paragraph.
+- **Re-translation runs a batch**, not a single paragraph, from the paragraph
+  whose button was clicked. A paragraph re-translated alone gets *less*
+  surrounding context than it had originally, which shifts register and word
+  choice away from its neighbours — redoing it to improve quality while
+  removing context works against itself. The button says so, rather than
+  leaving scope to be inferred from position (§3.3's lesson).
+- **`previousTranslatedText` / `previousTranslatedBy` give one level of undo.**
+  The premise of the feature is *experimenting* with models, and an experiment
+  with no way back is a trap. Undo is per paragraph even though re-translation
+  is per batch, so a run where only some paragraphs came out worse can be fixed
+  without discarding the ones that improved. Revert **swaps** the two texts
+  rather than copying over, so undo is itself undoable.
+- **Failure leaves the previous translation exactly where it was.** Nothing is
+  written until the reply arrives and `parseTranslationResponse` confirms the
+  paragraph count; then it all lands in one transaction. Same contract as
+  §3.2, and the reason the old text is never cleared "in preparation".
+- **Progress never moves.** Re-translation only replaces non-null text, so it
+  cannot open a gap and `lastTranslatedIndex` is meaningless to it.
+  `advanceWatermark` is deliberately not called — there is nothing it could
+  correctly change, and calling it would invite the belief that it might.
+- `findTranslatedRun` is the mirror of `findPendingRun`: it collects translated
+  paragraphs and stops at an untranslated one. Filling gaps is the ordinary
+  translate button's job; mixing the two would make "12 paragraf diterjemahkan
+  ulang" untrue.
+- API: `POST /api/translate` with `{ retranslate: true, fromIndex }`, and
+  `POST /api/books/:id/paragraphs/:orderIndex/revert`.
+
+Because the glossary is injected through the same prompt builder, this doubles
+as the way to refresh translations after correcting glossary terms.
+
 ### 3.4 Library View
 - List of all books, progress bar (`lastTranslatedIndex / totalParagraphs`),
   "Continue reading" / "Continue translating" buttons.

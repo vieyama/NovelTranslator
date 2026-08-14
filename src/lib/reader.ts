@@ -3,7 +3,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
-import { BookAccessError } from "@/lib/ownership";
+import { BookAccessError, assertBookOwned } from "@/lib/ownership";
 import {
   READER_PAGE_SIZE,
   fromForPage,
@@ -59,7 +59,13 @@ export async function getReaderPage(
       where: { bookId, orderIndex: { gte: from } },
       orderBy: { orderIndex: "asc" },
       take: READER_PAGE_SIZE,
-      select: { orderIndex: true, originalText: true, translatedText: true },
+      select: {
+        orderIndex: true,
+        originalText: true,
+        translatedText: true,
+        translatedBy: true,
+        previousTranslatedText: true,
+      },
     }),
     prisma.paragraph.findFirst({
       where: { bookId, translatedText: null },
@@ -77,10 +83,69 @@ export async function getReaderPage(
       totalParagraphs: book.totalParagraphs,
     },
     progress: { lastReadIndex, lastTranslatedIndex },
-    paragraphs,
+    // `previousTranslatedText` is reduced to a boolean on purpose: the reader
+    // only needs to know whether undo is available, and shipping a second full
+    // copy of every paragraph to the browser would roughly double the payload.
+    paragraphs: paragraphs.map(({ previousTranslatedText, ...paragraph }) => ({
+      ...paragraph,
+      hasPreviousVersion: previousTranslatedText !== null,
+    })),
     pagination: { currentPage, totalPages, pageSize: READER_PAGE_SIZE, from },
     firstUntranslatedIndex: firstUntranslated?.orderIndex ?? null,
     translatedCount,
+  };
+}
+
+/**
+ * Restores the previous translation of one paragraph (SPEC.md §3.6).
+ *
+ * The undo half of re-translation: the two texts swap places rather than the
+ * old one being copied over the new, so undo is itself undoable — click twice
+ * and you are back where you started. That matters because the whole feature
+ * exists for comparing two models, and a one-way undo just moves the trap.
+ */
+export async function revertTranslation(
+  bookId: string,
+  userId: string,
+  orderIndex: number,
+): Promise<{ translatedText: string; translatedBy: string | null }> {
+  await assertBookOwned(bookId, userId);
+
+  const paragraph = await prisma.paragraph.findFirst({
+    where: { bookId, orderIndex },
+    select: {
+      id: true,
+      translatedText: true,
+      translatedBy: true,
+      previousTranslatedText: true,
+      previousTranslatedBy: true,
+    },
+  });
+
+  if (!paragraph) {
+    throw new ProgressUpdateError(`Paragraph #${orderIndex} not found.`, 404);
+  }
+
+  if (paragraph.previousTranslatedText === null) {
+    throw new ProgressUpdateError("Paragraf ini tidak punya versi sebelumnya.", 400);
+  }
+
+  const restored = await prisma.paragraph.update({
+    where: { id: paragraph.id },
+    data: {
+      translatedText: paragraph.previousTranslatedText,
+      translatedBy: paragraph.previousTranslatedBy,
+      previousTranslatedText: paragraph.translatedText,
+      previousTranslatedBy: paragraph.translatedBy,
+    },
+    select: { translatedText: true, translatedBy: true },
+  });
+
+  // Both sides are non-null here: the guard above proved the previous text
+  // existed, and it is what was just written into `translatedText`.
+  return {
+    translatedText: restored.translatedText ?? "",
+    translatedBy: restored.translatedBy,
   };
 }
 

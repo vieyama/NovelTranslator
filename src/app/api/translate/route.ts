@@ -1,6 +1,6 @@
 import { AiSettingsError } from "@/lib/ai-settings";
 import { UnauthorizedError, requireApiUser } from "@/lib/session";
-import { translateNextBatch } from "@/lib/translator/translateNextBatch";
+import { retranslateBatch, translateNextBatch } from "@/lib/translator/translateNextBatch";
 import { TranslationError } from "@/lib/translator/types";
 
 // pg needs Node's TCP/TLS sockets (no edge runtime support), and batches can
@@ -29,10 +29,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "Expected a JSON body with a `bookId`." }, { status: 400 });
   }
 
-  const { bookId, maxChars, fromIndex } = (body ?? {}) as {
+  const { bookId, maxChars, fromIndex, retranslate } = (body ?? {}) as {
     bookId?: unknown;
     maxChars?: unknown;
     fromIndex?: unknown;
+    retranslate?: unknown;
   };
 
   if (typeof bookId !== "string" || bookId.trim() === "") {
@@ -47,12 +48,34 @@ export async function POST(request: Request) {
     return Response.json({ error: "`fromIndex` must be a number." }, { status: 400 });
   }
 
+  // Re-translation replaces existing text rather than filling a gap, so it
+  // must name where it starts — there is no watermark to continue from.
+  if (retranslate === true && typeof fromIndex !== "number") {
+    return Response.json(
+      { error: "`fromIndex` is required when `retranslate` is true." },
+      { status: 400 },
+    );
+  }
+
   try {
     const user = await requireApiUser();
 
     // Provider, model and API key all come from this user's settings (falling
     // back to the server env vars); everything after this point is identical
-    // for Claude and Gemini.
+    // whichever provider is selected.
+    if (retranslate === true) {
+      const result = await retranslateBatch({
+        bookId: bookId.trim(),
+        userId: user.id,
+        fromIndex: fromIndex as number,
+        maxChars,
+      });
+
+      // `done` and `progress` are deliberately absent: re-translation never
+      // moves the watermark, and reporting progress here would imply it might.
+      return Response.json({ ...result, retranslated: true });
+    }
+
     const result = await translateNextBatch({
       bookId: bookId.trim(),
       userId: user.id,

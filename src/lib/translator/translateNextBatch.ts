@@ -146,12 +146,13 @@ export async function translateNextBatch({
   }
 
   const translatedAt = new Date();
+  const translatedBy = describeSource(activeProvider.id, response.model);
 
   const newWatermark = await prisma.$transaction(async (tx) => {
     for (const [position, paragraph] of batch.entries()) {
       await tx.paragraph.update({
         where: { id: paragraph.id },
-        data: { translatedText: parsed.paragraphs[position], translatedAt },
+        data: { translatedText: parsed.paragraphs[position], translatedAt, translatedBy },
       });
     }
 
@@ -174,6 +175,182 @@ export async function translateNextBatch({
     model: response.model,
     usage: response.usage,
   };
+}
+
+/** Stored in `Paragraph.translatedBy` — "provider:model", e.g. "gemini:gemini-flash-latest". */
+function describeSource(providerId: string, model: string): string {
+  return `${providerId}:${model}`;
+}
+
+export interface RetranslateInput {
+  bookId: string;
+  userId: string;
+  /** First paragraph to redo. The batch runs forward from here. */
+  fromIndex: number;
+  maxChars?: number;
+  provider?: TranslationProvider;
+}
+
+export interface RetranslateResult {
+  paragraphs: TranslatedParagraph[];
+  provider: string;
+  model: string;
+  usage?: { inputTokens: number; outputTokens: number };
+}
+
+/**
+ * Re-translates a batch of *already translated* paragraphs (SPEC.md §3.6).
+ *
+ * For when one model's output reads badly and another should be tried. Three
+ * properties this has to keep:
+ *
+ * - **The old text survives a failure.** Nothing is written until the reply has
+ *   come back and `parseTranslationResponse` has confirmed the paragraph count,
+ *   and then it all lands in one transaction. A provider error or a mismatched
+ *   separator count leaves the previous translation exactly where it was — the
+ *   same contract as `translateNextBatch`.
+ * - **The old text is kept, not discarded.** Each paragraph's current text
+ *   moves to `previousTranslatedText` before being overwritten, so a worse
+ *   result can be reverted per paragraph.
+ * - **Progress never moves.** Re-translation only ever replaces non-null text,
+ *   so it cannot open a gap, so `lastTranslatedIndex` is meaningless to it.
+ *   `advanceWatermark` is deliberately not called: there is nothing it could
+ *   correctly change, and calling it would invite the belief that it might.
+ */
+export async function retranslateBatch({
+  bookId,
+  userId,
+  fromIndex,
+  maxChars,
+  provider,
+}: RetranslateInput): Promise<RetranslateResult> {
+  const effectiveMaxChars = resolveMaxChars(maxChars);
+
+  const book = await prisma.book.findFirst({
+    where: { id: bookId, userId },
+    include: { glossaryTerms: { orderBy: { term: "asc" } } },
+  });
+
+  if (!book) {
+    throw new TranslationError(`Book ${bookId} not found.`, "provider_error", 404);
+  }
+
+  if (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex > book.totalParagraphs - 1) {
+    throw new TranslationError(
+      `\`fromIndex\` must be an integer between 0 and ${book.totalParagraphs - 1}.`,
+      "provider_error",
+      400,
+    );
+  }
+
+  const activeProvider = provider ?? (await resolveProviderForUser(userId));
+
+  const run = await findTranslatedRun(bookId, fromIndex);
+
+  if (run.length === 0) {
+    throw new TranslationError(
+      `Paragraf #${fromIndex} belum diterjemahkan, jadi tidak ada yang bisa diulang.`,
+      "provider_error",
+      400,
+    );
+  }
+
+  const batch = groupIntoBatch(run, effectiveMaxChars);
+
+  const request = await buildPrompt({
+    paragraphs: batch.map((paragraph) => paragraph.originalText),
+    glossaryTerms: book.glossaryTerms,
+  });
+
+  const response = await activeProvider.translateBatch(request);
+  const parsed = parseTranslationResponse(response.text, batch.length);
+
+  if (!parsed.ok) {
+    throw new TranslationError(parsed.error, "count_mismatch");
+  }
+
+  const translatedAt = new Date();
+  const translatedBy = describeSource(activeProvider.id, response.model);
+
+  await prisma.$transaction(async (tx) => {
+    for (const [position, paragraph] of batch.entries()) {
+      await tx.paragraph.update({
+        where: { id: paragraph.id },
+        data: {
+          // Demote the current text before overwriting it. `previousTranslatedText`
+          // holds one level only: re-translating twice keeps the immediately
+          // preceding version, not a full history.
+          previousTranslatedText: paragraph.translatedText,
+          previousTranslatedBy: paragraph.translatedBy,
+          translatedText: parsed.paragraphs[position],
+          translatedAt,
+          translatedBy,
+        },
+      });
+    }
+  });
+
+  return {
+    paragraphs: batch.map((paragraph, position) => ({
+      orderIndex: paragraph.orderIndex,
+      originalText: paragraph.originalText,
+      translatedText: parsed.paragraphs[position],
+    })),
+    provider: activeProvider.id,
+    model: response.model,
+    usage: response.usage,
+  };
+}
+
+/**
+ * The contiguous run of *translated* paragraphs starting at `fromIndex`.
+ *
+ * The mirror image of `findPendingRun`: that one collects untranslated
+ * paragraphs and stops at translated ones, this one does the reverse. An
+ * untranslated paragraph ends the run rather than being swept in, because
+ * re-translation is a replace operation — filling a gap is what the ordinary
+ * translate button is for, and mixing the two would make the result message
+ * ("12 paragraf diterjemahkan ulang") a lie.
+ */
+async function findTranslatedRun(
+  bookId: string,
+  fromIndex: number,
+): Promise<RetranslatableParagraph[]> {
+  const candidates = await prisma.paragraph.findMany({
+    where: { bookId, orderIndex: { gte: fromIndex } },
+    orderBy: { orderIndex: "asc" },
+    take: CANDIDATE_LIMIT,
+    select: {
+      id: true,
+      orderIndex: true,
+      originalText: true,
+      charCount: true,
+      translatedText: true,
+      translatedBy: true,
+    },
+  });
+
+  const run: RetranslatableParagraph[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.translatedText === null) break;
+
+    run.push({
+      id: candidate.id,
+      orderIndex: candidate.orderIndex,
+      originalText: candidate.originalText,
+      charCount: candidate.charCount,
+      translatedText: candidate.translatedText,
+      translatedBy: candidate.translatedBy,
+    });
+  }
+
+  return run;
+}
+
+interface RetranslatableParagraph extends PendingParagraph {
+  translatedText: string;
+  translatedBy: string | null;
 }
 
 interface PendingParagraph {
@@ -229,11 +406,15 @@ async function findPendingRun(bookId: string, anchor: number): Promise<PendingPa
  * whole and alone — splitting it would break sentence context
  * (CLAUDE.md → "Batching for translation").
  */
-export function groupIntoBatch(
-  paragraphs: PendingParagraph[],
+export function groupIntoBatch<T extends { charCount: number }>(
+  // Generic so the re-translate path keeps its extra fields
+  // (`translatedText`, `translatedBy`) through batching — they are what the
+  // undo column is populated from, and widening to `PendingParagraph` here
+  // would silently drop them.
+  paragraphs: T[],
   maxChars: number,
-): PendingParagraph[] {
-  const batch: PendingParagraph[] = [];
+): T[] {
+  const batch: T[] = [];
   let total = 0;
 
   for (const paragraph of paragraphs) {

@@ -3,6 +3,7 @@
 // From the schema module, not `@/lib/reader` — that one imports Prisma.
 import type { ReaderParagraph } from "@/lib/reader-schema";
 
+import { RetranslateControls } from "./RetranslateControls";
 import { TranslateFromHereButton } from "./TranslateFromHereButton";
 import type { ViewMode } from "./types";
 
@@ -103,6 +104,17 @@ export function ParagraphBlock({
           >
             {isMarking ? "Menyimpan…" : "Tandai sudah dibaca sampai sini"}
           </button>
+        )}
+
+        {/* Only on paragraphs that have something to redo — an untranslated
+            one already has its own "Terjemahkan dari sini". */}
+        {paragraph.translatedText !== null && (
+          <RetranslateControls
+            bookId={bookId}
+            orderIndex={paragraph.orderIndex}
+            translatedBy={paragraph.translatedBy}
+            hasPreviousVersion={paragraph.hasPreviousVersion}
+          />
         )}
       </div>
     </article>

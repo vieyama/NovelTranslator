@@ -89,6 +89,23 @@ model Paragraph {
   charCount      Int
   translatedAt   DateTime?
 
+  // Which provider and model produced `translatedText`, as "provider:model"
+  // (e.g. "gemini:gemini-flash-latest"). Null for rows translated before this
+  // column existed — displayed as "tidak diketahui" rather than guessed at.
+  //
+  // Without it, switching model in Settings leaves no way to tell which
+  // paragraphs came from the model you were unhappy with, which is what makes
+  // "re-translate the bad ones" actionable at all (SPEC.md §3.6).
+  translatedBy String?
+
+  // One level of undo for re-translation. Re-translating overwrites text the
+  // reader may have preferred, and the whole point of the feature is trying a
+  // different model *to see* — an experiment with no way back is a trap.
+  // Only ever written by the re-translate path; a first translation leaves
+  // these null.
+  previousTranslatedText String?
+  previousTranslatedBy   String?
+
   @@unique([bookId, orderIndex])
   @@index([bookId, orderIndex])
 }

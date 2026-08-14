@@ -14,6 +14,29 @@ export interface ReaderParagraph {
   originalText: string;
   /** `null` = not yet translated. */
   translatedText: string | null;
+  /**
+   * "provider:model" that produced the current text, or null for paragraphs
+   * translated before provenance was recorded. Shown in the reader so quality
+   * can be judged against its source (SPEC.md §3.6).
+   */
+  translatedBy: string | null;
+  /** True when a re-translation left a previous version that can be restored. */
+  hasPreviousVersion: boolean;
+}
+
+/**
+ * Splits a stored "provider:model" into something readable.
+ *
+ * Kept here rather than in the component so the reader and any future surface
+ * format provenance the same way.
+ */
+export function describeTranslationSource(translatedBy: string | null): string | null {
+  if (!translatedBy) return null;
+
+  const separator = translatedBy.indexOf(":");
+  if (separator === -1) return translatedBy;
+
+  return translatedBy.slice(separator + 1) || translatedBy;
 }
 
 export interface ReaderPagination {

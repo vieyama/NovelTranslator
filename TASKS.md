@@ -783,6 +783,36 @@ Notes:
       - **The user pasted a live OpenRouter key into the chat** while asking for
         this. Flagged for rotation; it was never written to any file.
 
+- [x] Re-translate with undo (user request: "model A jelek, coba model B")
+      - **Provenance was the missing half.** `Paragraph` recorded *when* it was
+        translated but not *by what*, so after switching model there was no way
+        to find the old model's output. `translatedBy` ("provider:model") makes
+        the feature actionable; the migration is additive and existing rows stay
+        null rather than being guessed at.
+      - Batch, not single paragraph, decided deliberately: a paragraph redone
+        alone loses the neighbouring context it originally had, so quality drifts
+        from its surroundings — self-defeating for a feature whose purpose is
+        better quality. Undo is per paragraph regardless, which is what makes the
+        batch safe to accept.
+      - Revert **swaps** current and previous rather than copying over, so undo
+        is undoable — otherwise the trap just moves one step along.
+      - `advanceWatermark` is deliberately *not* called on this path.
+      - **Test bug worth remembering**: the fake provider counted paragraphs by
+        splitting the prompt on `PARAGRAPH_SEPARATOR`, but the instruction line
+        itself contains that string — so the count was off by one and the
+        "returns the wrong count" provider accidentally returned the *right*
+        count, turning a real assertion green-adjacent. Now read from the
+        prompt's explicit "(N paragraphs" instead.
+      - Verified without any API key by injecting fake providers through
+        `retranslateBatch`'s `provider` seam — 24 checks: provider outage and
+        paragraph-count mismatch both leave the old text and undo column
+        untouched; a success replaces text, records new provenance, preserves
+        the old text and its provenance, leaves the watermark at 40, and does
+        not touch paragraphs before `fromIndex`; revert restores text *and*
+        provenance and stays re-undoable; guards refuse reverting without a
+        previous version, re-translating an untranslated paragraph, and another
+        user's book (404). Plus 9 browser checks on the controls.
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order
