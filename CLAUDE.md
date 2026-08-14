@@ -163,6 +163,12 @@ Client Component, Node just doesn't set the condition Next does.
   re-focusing restores what was lost; if it doesn't, a `key` change is the real
   bug. Only reclaim focus while `document.body` still holds it, so focus the
   user has deliberately moved isn't yanked back.
+- **`position: sticky` only sticks while its parent box is in view.** A sticky
+  element nested in a container that scrolls away goes with it, which looks
+  like "sticky randomly stops working". Make it a sibling of the thing it
+  should outlive. When two sticky bars stack, the lower one's `top-*` must
+  equal the upper one's height, and any `scroll-mt-*` used for anchor jumps has
+  to clear *both* — `ReaderView` measures 44 + 57 = 101px, hence `scroll-mt-28`.
 - **A link whose href is the URL you're already on does nothing.** Anchor
   navigation (`?page=5#p-137`) scrolls correctly when it changes the URL, and
   silently no-ops when it doesn't — so a "jump back to my position" control

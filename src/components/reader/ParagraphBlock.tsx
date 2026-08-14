@@ -35,7 +35,7 @@ export function ParagraphBlock({
   return (
     <article
       id={`p-${paragraph.orderIndex}`}
-      className={`group scroll-mt-24 rounded-lg border-l-2 py-3 pl-4 pr-2 transition-colors ${isRead
+      className={`group scroll-mt-28 rounded-lg border-l-2 py-3 pl-4 pr-2 transition-colors ${isRead
           ? "border-emerald-500/70 bg-emerald-50/40 dark:bg-emerald-950/20"
           : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-700"
         }`}

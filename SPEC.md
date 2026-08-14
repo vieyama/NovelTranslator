@@ -135,6 +135,14 @@ right before that gap (or the last paragraph, if there is no gap). This means:
   logic that marking read is "up to here", not "just this one". The action
   reuses the same `PATCH /api/books/:id/progress` endpoint, just with
   `lastReadIndex` set to `orderIndex - 1` instead of `orderIndex`.
+- **Two stacked sticky bars** sit above the reader: the
+  Perpustakaan/Glosarium nav (`top-0`, fixed `h-11`) and the view-mode toggle
+  (`top-11`, so it pins directly beneath). Both are siblings of `<header>`, not
+  children — `position: sticky` is confined to its parent's box, so nesting the
+  nav inside the header would make it scroll away the moment the header did.
+  Their combined 101px is why paragraphs carry `scroll-mt-28` (112px): at the
+  previous `scroll-mt-24` (96px) a jumped-to paragraph would land *behind* the
+  bars. Measured, not guessed — change one and re-measure the other.
 - The header has two "jump to my position" shortcuts: **Ke posisi baca
   terakhir** and **Ke batas terjemahan terakhir**. Each goes to
   `?page=N#p-{index}` — the page holding that paragraph *and* the paragraph

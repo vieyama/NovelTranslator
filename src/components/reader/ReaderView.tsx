@@ -95,23 +95,32 @@ export function ReaderView({ page }: { page: ReaderPage }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-6 sm:px-6">
+      {/* Sticky, and deliberately a sibling of <header> rather than a child of
+          it: `position: sticky` is confined to its parent's box, so nested in
+          the header this would scroll away the moment the header did — sticking
+          only over the few hundred pixels nobody needs it for.
+
+          `h-11` is load-bearing: the "Tampilan" bar below pins itself at
+          `top-11` to sit directly under this one, and `scroll-mt-28` on each
+          paragraph clears both so the jump-to-paragraph shortcuts don't land
+          behind them. */}
+      <div className="sticky top-0 z-20 -mx-4 flex h-11 items-center justify-between gap-4 border-b border-zinc-200 bg-white/90 px-4 backdrop-blur sm:-mx-6 sm:px-6 dark:border-zinc-800 dark:bg-zinc-950/90">
+        <Link
+          href="/books"
+          className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          ← Perpustakaan
+        </Link>
+
+        <Link
+          href={`/books/${book.id}/glossary`}
+          className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          Glosarium →
+        </Link>
+      </div>
+
       <header className="border-b border-zinc-200 pb-4 dark:border-zinc-800">
-        <div className="flex items-center justify-between gap-4">
-          <Link
-            href="/books"
-            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-          >
-            ← Perpustakaan
-          </Link>
-
-          <Link
-            href={`/books/${book.id}/glossary`}
-            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-          >
-            Glosarium →
-          </Link>
-        </div>
-
         <h1 className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{book.title}</h1>
         {book.author && <p className="text-sm text-zinc-500">{book.author}</p>}
 
@@ -168,7 +177,7 @@ export function ReaderView({ page }: { page: ReaderPage }) {
         </div>
       </header>
 
-      <div className="sticky top-0 z-10 -mx-4 mb-2 flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-zinc-800 dark:bg-zinc-950/90">
+      <div className="sticky top-11 z-10 -mx-4 mb-2 flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-zinc-800 dark:bg-zinc-950/90">
         <span className="text-xs uppercase tracking-wide text-zinc-500">Tampilan</span>
         {VIEW_MODES.map((mode) => (
           <button
