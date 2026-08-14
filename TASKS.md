@@ -757,6 +757,32 @@ Notes:
         `usage` field names are still only checked against the documented
         contract.
 
+- [x] Add OpenRouter as a fourth provider (ad hoc user request)
+      - **`validateModelName` rejected every OpenRouter model id.** Its charset
+        had no `/`, and OpenRouter namespaces everything by vendor
+        (`openai/gpt-4o`, `meta-llama/…:free`). Caught before writing the
+        client by running the existing regex against real ids; left alone it
+        would have failed at save time with a message about punctuation. Still
+        deny-by-default — spaces and quotes remain rejected.
+      - **Extracted `openAiCompatible.ts`** rather than copying the Mistral
+        client: both providers are the same POST differing only in URL, default
+        model and headers, so two copies would have drifted on the next fix.
+        Mistral's client is now ~30 lines of configuration, and its full test
+        suite was re-run afterwards to prove the refactor was behaviour-neutral.
+      - OpenRouter proxies other vendors and reports *upstream* failures as HTTP
+        200 with an `error` object rather than `choices`; handled explicitly, or
+        it would surface as "returned no choices".
+      - Model ids verified against OpenRouter's public catalogue endpoint (411
+        models) instead of being written from memory — two plausible-looking
+        `:free` ids turned out not to exist.
+      - Verified: four providers listed, `/` and `:free` model names round-trip
+        through save and reload, key stored encrypted and shown masked only, and
+        a live call with an invalid key returns OpenRouter's own "User not
+        found." — proving URL, headers and auth format are right — mapped to
+        `missing_api_key` with progress untouched.
+      - **The user pasted a live OpenRouter key into the chat** while asking for
+        this. Flagged for rotation; it was never written to any file.
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order

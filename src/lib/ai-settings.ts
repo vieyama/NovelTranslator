@@ -48,6 +48,7 @@ const ENV_KEY_BY_PROVIDER: Record<AiProviderName, string> = {
   claude: "ANTHROPIC_API_KEY",
   gemini: "GEMINI_API_KEY",
   mistral: "MISTRAL_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
 };
 
 function envKeyFor(provider: AiProviderName): string | null {

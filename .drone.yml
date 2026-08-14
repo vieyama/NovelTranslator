@@ -31,6 +31,8 @@ steps:
         from_secret: GEMINI_API_KEY
       MISTRAL_API_KEY:
         from_secret: MISTRAL_API_KEY
+      OPENROUTER_API_KEY:
+        from_secret: OPENROUTER_API_KEY
       AUTH_SECRET:
         from_secret: AUTH_SECRET
       APP_ENCRYPTION_KEY:
@@ -57,6 +59,7 @@ steps:
         ANTHROPIC_API_KEY=$${ANTHROPIC_API_KEY}
         GEMINI_API_KEY=$${GEMINI_API_KEY}
         MISTRAL_API_KEY=$${MISTRAL_API_KEY}
+        OPENROUTER_API_KEY=$${OPENROUTER_API_KEY}
         AUTH_SECRET=$${AUTH_SECRET}
         APP_ENCRYPTION_KEY=$${APP_ENCRYPTION_KEY}
         AUTH_URL=$${AUTH_URL}
@@ -180,3 +183,10 @@ name: MISTRAL_API_KEY
 get:
   path: drone/data/vieyama/novel-translator
   name: MISTRAL_API_KEY
+
+---
+kind: secret
+name: OPENROUTER_API_KEY
+get:
+  path: drone/data/vieyama/novel-translator
+  name: OPENROUTER_API_KEY

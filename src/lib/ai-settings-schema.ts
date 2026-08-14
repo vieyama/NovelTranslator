@@ -46,6 +46,22 @@ export const AI_PROVIDERS = [
       { value: "mistral-small-latest", label: "Mistral Small (latest) — paling murah" },
     ],
   },
+  {
+    value: "openrouter",
+    label: "OpenRouter",
+    keyHint: "openrouter.ai/keys",
+    keyPlaceholder: "sk-or-v1-…",
+    // A gateway to ~400 models across vendors, so this list is only a starting
+    // point — "Model lain (isi manual)" is the real interface here. Ids carry a
+    // vendor prefix and sometimes a `:free` suffix, which is why
+    // `validateModelName` has to accept "/".
+    models: [
+      { value: "openai/gpt-4o", label: "OpenAI GPT-4o" },
+      { value: "anthropic/claude-sonnet-4.5", label: "Anthropic Claude Sonnet 4.5" },
+      { value: "google/gemini-2.5-flash", label: "Google Gemini 2.5 Flash" },
+      { value: "mistralai/mistral-large", label: "Mistral Large" },
+    ],
+  },
 ] as const;
 
 export type AiProviderName = (typeof AI_PROVIDERS)[number]["value"];
@@ -93,13 +109,24 @@ export interface AiSettingsView {
   encryptionReady: boolean;
 }
 
-/** Model names are sent to the provider API, so keep them to a sane shape. */
+/**
+ * Model names are sent to the provider API, so keep them to a sane shape.
+ *
+ * `/` is allowed because OpenRouter namespaces every model by vendor
+ * (`openai/gpt-4o`, `meta-llama/llama-3.3-70b-instruct:free`). Without it the
+ * entire provider is unusable — every one of its ~400 model ids is rejected at
+ * save time, with an error about punctuation rather than anything meaningful.
+ *
+ * Still a deny-by-default character set rather than a free-for-all: the value
+ * is interpolated into a request body, and there is no reason for a model name
+ * to contain whitespace, quotes, or control characters.
+ */
 export function validateModelName(value: string): string | null {
   const trimmed = value.trim();
 
   if (trimmed === "") return null;
   if (trimmed.length > 100) return null;
-  if (!/^[a-zA-Z0-9._@:-]+$/.test(trimmed)) return null;
+  if (!/^[a-zA-Z0-9._@:/-]+$/.test(trimmed)) return null;
 
   return trimmed;
 }

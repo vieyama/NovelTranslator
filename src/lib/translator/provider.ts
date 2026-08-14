@@ -7,6 +7,7 @@ import { type AiProviderName } from "@/lib/ai-settings-schema";
 import { createClaudeProvider } from "./claudeClient";
 import { createGeminiProvider } from "./geminiClient";
 import { createMistralProvider } from "./mistralClient";
+import { createOpenRouterProvider } from "./openrouterClient";
 import { TranslationError, type ProviderConfig, type TranslationProvider } from "./types";
 
 /**
@@ -36,12 +37,15 @@ const ALIASES: Record<string, ProviderName> = {
   google: "gemini",
   mistral: "mistral",
   mistralai: "mistral",
+  openrouter: "openrouter",
+  "open-router": "openrouter",
 };
 
 const FACTORIES: Record<ProviderName, (config: ProviderConfig) => TranslationProvider> = {
   claude: createClaudeProvider,
   gemini: createGeminiProvider,
   mistral: createMistralProvider,
+  openrouter: createOpenRouterProvider,
 };
 
 /**
@@ -59,7 +63,7 @@ export function resolveProvider(config: ProviderConfig, requested?: string): Tra
 
   if (!name) {
     throw new TranslationError(
-      `Unknown TRANSLATION_PROVIDER "${raw}". Use "claude", "gemini", or "mistral".`,
+      `Unknown TRANSLATION_PROVIDER "${raw}". Use "claude", "gemini", "mistral", or "openrouter".`,
       "provider_error",
       500,
     );

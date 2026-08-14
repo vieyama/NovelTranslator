@@ -377,14 +377,27 @@ interface TranslationProvider {
   adaptive thinking + server-side model fallback).
 - `geminiClient.ts` — Google Gemini, via `@google/genai` (typed finish reasons,
   "thought" parts filtered out of the reply).
-- `mistralClient.ts` — Mistral, via **plain `fetch`, no SDK**.
-  `@mistralai/mistralai` drags in `ws`, `zod`, `zod-to-json-schema` and an
-  OpenTelemetry package to wrap one OpenAI-shaped POST to
-  `https://api.mistral.ai/v1/chat/completions`. The other two clients earn
-  their SDKs — streaming, thinking blocks, typed enums — this one does not, and
-  every dependency is one more thing that can break a Bun build (§7.1). It sets
-  `temperature: 0.2`: the default is loose enough to paraphrase, and the reply
-  must come back with exactly the separator count it was sent.
+- `mistralClient.ts` / `openrouterClient.ts` — both speak the OpenAI
+  chat-completions shape, so the transport lives once in
+  `openAiCompatible.ts` and each file is just configuration (URL, default
+  model, headers). Two copies would drift: a fix to the finish-reason handling
+  or the defensive content parsing would land in one and not the other.
+  - **Plain `fetch`, no SDK.** The vendor SDKs wrap this same POST in `ws`,
+    `zod` and OpenTelemetry dependencies. Claude and Gemini earn their SDKs —
+    streaming, thinking blocks, typed enums — these do not, and every
+    dependency is one more thing that can break a Bun build (§7.1).
+  - `temperature: 0.2`, because both default loose enough to paraphrase and the
+    reply must return exactly the separator count it was sent.
+  - **OpenRouter is a gateway to ~400 models across vendors**, so its curated
+    list in `AI_PROVIDERS` is only a starting point — the free-text "Model lain
+    (isi manual)" field is the real interface. Its ids are vendor-prefixed
+    (`openai/gpt-4o`) and sometimes suffixed (`…:free`), which is why
+    `validateModelName` accepts `/`; without that every OpenRouter model is
+    rejected at save time. It also sends OpenRouter's optional `HTTP-Referer` /
+    `X-Title` attribution pair, omitted when empty rather than sent blank.
+  - OpenRouter reports *upstream* vendor failures as HTTP 200 with an `error`
+    object instead of `choices`, so that case is detected explicitly rather
+    than surfacing as the much less useful "returned no choices".
 
 All three use the same prompt from `TRANSLATION_RULES.md` — only the API call
 differs — so translation style doesn't depend on which provider handled a batch.
