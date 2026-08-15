@@ -824,6 +824,33 @@ Notes:
         previous version, re-translating an untranslated paragraph, and another
         user's book (404). Plus 9 browser checks on the controls.
 
+- [x] Several saved API keys per provider, switchable (user request: rotating
+      when a free tier runs out meant re-pasting keys every time)
+      - New `ApiKey` table + `AiProviderCredential.activeKeyId`. **The migration
+        was written by hand**: Prisma's diff put `DROP COLUMN "encryptedApiKey"`
+        first, which would have destroyed all three keys already in production.
+        The copy runs before the drop, in one transaction.
+      - Ciphertexts are **moved verbatim, never re-encrypted** — their AAD is
+        `"<userId>:<provider>"`, preserved by the new table. Re-encrypting would
+        need the master key inside a SQL migration, which is impossible.
+      - Proved on a database seeded to the current production schema with
+        production-shaped ciphertexts: all three moved intact, each became its
+        provider's active key, models survived, old column gone.
+      - Adding a key doesn't steal the active slot from an existing one, but the
+        first key for a provider claims it. Deleting the active key promotes
+        another. `SetNull` keeps the model setting when its key is deleted.
+      - The key list is a **sibling** of the settings `<form>`, not a child:
+        nested forms are invalid HTML and its buttons would have submitted the
+        settings form instead of doing their own work.
+      - Dates render as `slice(0, 10)` of the ISO string rather than
+        `toLocaleString`, which differs between server and client render and
+        would trip a hydration mismatch.
+      - 17 checks: save, auto-activate first, mask not plaintext, second key
+        doesn't steal active, translate uses the active key, **switching key
+        makes the next translation use it immediately**, `lastUsedAt` stamped,
+        delete promotes a replacement, another user's key id is refused for both
+        activate and delete, and env fallback still applies with no saved keys.
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order

@@ -750,6 +750,32 @@ backwards. A provider with no key anywhere fails at translate time with
 "Belum ada API key untuk X. Tambahkan di halaman Pengaturan." — which is where
 the fix is.
 
+### 8.5 Saved API keys
+
+Several keys per provider, one active at a time. Free tiers run out, and before
+this the only way to switch was finding the other key wherever it was kept and
+pasting it in again — every time, for every provider.
+
+- **`ApiKey`** holds one row per saved key (`label`, `encryptedApiKey`,
+  `lastUsedAt`); `AiProviderCredential.activeKeyId` points at the one in use.
+  Adding a key never steals the active slot from an existing one — a spare
+  should not silently change what translations run under — but the *first* key
+  for a provider takes it, or adding one would appear to do nothing.
+- **The migration moves existing ciphertexts, it does not re-encrypt them.**
+  Their AAD is `"<userId>:<provider>"`, which the new table keeps unchanged;
+  re-encrypting would need the master key and a decrypt step, and neither
+  exists in SQL. Prisma's generated diff put `DROP COLUMN "encryptedApiKey"`
+  *first* — the hand-written migration copies before dropping, in one
+  transaction, so a failed copy loses nothing.
+- **Deleting the active key promotes another** rather than leaving a provider
+  with saved keys and none selected, and `activeKeyId` is `SetNull` so removing
+  a key never takes the model setting with it.
+- `lastUsedAt` is stamped when a translation *resolves* the key, not when it
+  succeeds — "last attempted with" is the more useful signal when hunting for
+  the key whose quota ran out, since the failing one is exactly the one to spot.
+- The list is a sibling of the provider/model `<form>`, never a child: nested
+  forms are invalid HTML and its buttons would submit the settings form.
+
 **The provider clients no longer cache their SDK client at module scope.** That
 was safe while the key came from one env var; with per-user keys it would pin
 the first user's key into the module and bill every later request to them.

@@ -28,26 +28,65 @@ model User {
 
   books          Book[]
   aiCredentials  AiProviderCredential[]
+  apiKeys        ApiKey[]
 }
 
-// One row per (user, provider), so switching provider in Settings doesn't
-// discard the model and key already configured for the other one.
+// One row per (user, provider): the *settings* for that provider — which model,
+// and which saved key is currently in use. Switching provider in Settings
+// therefore doesn't discard what was configured for the other one.
 model AiProviderCredential {
   id     String @id @default(cuid())
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // "claude" | "gemini" — matches ProviderName in src/lib/translator/provider.ts.
+  // "claude" | "gemini" | "mistral" | "openrouter" — matches ProviderName.
   provider String
   // Null = fall back to the provider client's built-in default model.
   model    String?
-  // AES-256-GCM under the user's DEK, AAD = "<userId>:<provider>". Null = not
-  // configured, in which case the server env var is used instead.
-  encryptedApiKey String?
-  updatedAt       DateTime @updatedAt
+
+  // Which of this provider's saved keys translations run under. Null = none
+  // chosen, in which case the server env var is used instead.
+  //
+  // `SetNull` rather than `Cascade`: deleting the key you were using must not
+  // delete the model setting with it — it should just leave the provider
+  // without an active key.
+  activeKeyId String? @unique
+  activeKey   ApiKey? @relation("ActiveKey", fields: [activeKeyId], references: [id], onDelete: SetNull)
+
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, provider])
   @@index([userId])
+}
+
+// A saved API key. Several per provider is the point (SPEC.md §8.5): free
+// tiers run out, and rotating used to mean pasting a key back in from
+// somewhere else every time.
+model ApiKey {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider String
+  /// User-facing name, e.g. "Akun utama" — the only way to tell two masked
+  /// keys apart in the list.
+  label String
+
+  // AES-256-GCM under the user's DEK, AAD = "<userId>:<provider>" — deliberately
+  // the *same* AAD as before this table existed, so the migration could move
+  // existing ciphertexts across with plain SQL. Re-encrypting would have meant
+  // decrypting during a migration, which needs the master key and cannot be
+  // done in SQL at all.
+  encryptedApiKey String
+
+  createdAt  DateTime  @default(now())
+  /// Set when a translation actually runs with this key, so an exhausted one
+  /// can be recognised by when it was last useful.
+  lastUsedAt DateTime?
+
+  activeFor AiProviderCredential? @relation("ActiveKey")
+
+  @@index([userId, provider])
 }
 
 model Book {

@@ -12,6 +12,8 @@ import {
   type AiSettingsView,
 } from "@/lib/ai-settings-schema";
 
+import { ApiKeyList } from "./ApiKeyList";
+
 /**
  * AI provider / model / API key settings (SPEC.md §8).
  *
@@ -59,18 +61,12 @@ export function AiSettingsForm({ initial }: { initial: AiSettingsView }) {
     setSaved(null);
   }
 
-  async function save(form: FormData) {
+  async function save() {
     setError(null);
     setSaved(null);
 
-    const rawKey = String(form.get("apiKey") ?? "");
     const model = modelChoice === CUSTOM_MODEL ? customModel.trim() : modelChoice;
-
     const payload: Record<string, unknown> = { provider, model };
-
-    // Only send the key when the user typed something, so an untouched field
-    // never overwrites (or clears) what is already stored.
-    if (rawKey.trim() !== "") payload.apiKey = rawKey.trim();
 
     try {
       const response = await fetch("/api/settings/ai", {
@@ -96,30 +92,9 @@ export function AiSettingsForm({ initial }: { initial: AiSettingsView }) {
     }
   }
 
-  async function clearKey() {
-    setError(null);
-    setSaved(null);
-
-    const response = await fetch("/api/settings/ai", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, model: modelChoice === CUSTOM_MODEL ? customModel : modelChoice, apiKey: "" }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      setError(data.error ?? "Gagal menghapus API key.");
-      return;
-    }
-
-    setSettings(data.settings);
-    setSaved("API key dihapus.");
-    router.refresh();
-  }
-
   return (
-    <form action={save} className="mt-6 flex flex-col gap-6">
+    <div className="mt-6 flex flex-col gap-8">
+      <form action={save} className="flex flex-col gap-6">
       {!settings.encryptionReady && (
         <p
           role="alert"
@@ -178,48 +153,6 @@ export function AiSettingsForm({ initial }: { initial: AiSettingsView }) {
         )}
       </div>
 
-      <div>
-        <label className="block text-sm text-zinc-700 dark:text-zinc-300">
-          API key {meta.label}
-          <input
-            type="password"
-            name="apiKey"
-            autoComplete="off"
-            placeholder={current?.hasApiKey ? "Biarkan kosong untuk tetap memakai yang tersimpan" : meta.keyPlaceholder}
-            className="mt-1 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 font-mono text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-          />
-        </label>
-
-        <p className="mt-2 text-xs text-zinc-500">
-          {current?.hasApiKey ? (
-            <>
-              Tersimpan terenkripsi
-              {current.maskedApiKey && (
-                <>
-                  {" "}
-                  (<code className="font-mono">{current.maskedApiKey}</code>)
-                </>
-              )}
-              .{" "}
-              <button
-                type="button"
-                onClick={clearKey}
-                className="underline hover:text-zinc-900 dark:hover:text-zinc-100"
-              >
-                Hapus
-              </button>
-            </>
-          ) : current?.hasEnvFallback ? (
-            <>Belum ada key pribadi — sementara memakai key server dari environment.</>
-          ) : (
-            <>
-              Belum ada API key. Ambil dari{" "}
-              <span className="font-mono">{meta.keyHint}</span>.
-            </>
-          )}
-        </p>
-      </div>
-
       {error && (
         <p role="alert" className="text-sm text-red-700 dark:text-red-400">
           {error}
@@ -229,6 +162,20 @@ export function AiSettingsForm({ initial }: { initial: AiSettingsView }) {
 
       <SubmitButton />
     </form>
+
+      {/* A sibling of the form, not a child: nested forms are invalid HTML and
+          its buttons would submit the settings form instead. */}
+      <ApiKeyList
+        provider={provider}
+        providerLabel={meta.label}
+        keyHint={meta.keyHint}
+        keyPlaceholder={meta.keyPlaceholder}
+        keys={current?.keys ?? []}
+        hasEnvFallback={current?.hasEnvFallback ?? false}
+        disabled={!settings.encryptionReady}
+        onChanged={setSettings}
+      />
+    </div>
   );
 }
 

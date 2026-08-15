@@ -114,16 +114,34 @@ export function defaultModelFor(provider: AiProviderName): string {
 }
 
 /**
+ * One saved key, as shown in the settings list.
+ *
+ * Never carries the plaintext — only a mask derived from it server-side. Dates
+ * are ISO strings rather than `Date` so the shape is identical whether it
+ * arrives through an RSC prop or as JSON from the API route.
+ */
+export interface SavedApiKey {
+  id: string;
+  label: string;
+  /** `null` if it can't be decrypted, e.g. after APP_ENCRYPTION_KEY changed. */
+  maskedApiKey: string | null;
+  isActive: boolean;
+  createdAt: string;
+  /** Last time a translation ran under this key — how you spot an exhausted one. */
+  lastUsedAt: string | null;
+}
+
+/**
  * What the settings page renders. The API key itself is never included — only
- * whether one is stored and a masked hint, so the page can be server-rendered
- * without the plaintext key ever reaching the browser.
+ * masked hints, so the page can be server-rendered without the plaintext key
+ * ever reaching the browser.
  */
 export interface AiProviderSettings {
   provider: AiProviderName;
   model: string | null;
-  hasApiKey: boolean;
-  maskedApiKey: string | null;
-  /** True when no stored key exists but the server env var can stand in. */
+  /** Several per provider: free tiers run out, and re-pasting was the old fix. */
+  keys: SavedApiKey[];
+  /** True when no key is active but the server env var can stand in. */
   hasEnvFallback: boolean;
 }
 
