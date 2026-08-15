@@ -98,10 +98,17 @@ export function RetranslateControls({
   }
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+    <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 [&>button]:whitespace-nowrap">
       {source && (
-        <span className="text-zinc-400 dark:text-zinc-600" title={translatedBy ?? undefined}>
-          via {source}
+        <span
+          className="whitespace-nowrap text-zinc-400 dark:text-zinc-600"
+          title={translatedBy ?? undefined}
+        >
+          {/* "via" is dropped on a phone: the model name alone still reads as
+              attribution next to the controls, and the row has no width to
+              spare. */}
+          <span className="hidden sm:inline">via </span>
+          {source}
         </span>
       )}
 
@@ -112,7 +119,14 @@ export function RetranslateControls({
         title={`Menerjemahkan ulang satu batch mulai dari paragraf #${orderIndex}`}
         className="rounded text-zinc-400 underline-offset-2 transition-colors hover:text-amber-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 disabled:cursor-wait dark:hover:text-amber-400"
       >
-        {busy === "retranslate" ? "Menerjemahkan ulang…" : "Terjemahkan ulang dari sini"}
+        {busy === "retranslate" ? (
+          "Menerjemahkan ulang…"
+        ) : (
+          <>
+            <span className="sm:hidden">↻ Ulangi</span>
+            <span className="hidden sm:inline">Terjemahkan ulang dari sini</span>
+          </>
+        )}
       </button>
 
       {/* Only rendered where an undo actually exists, so it isn't permanent
@@ -125,7 +139,14 @@ export function RetranslateControls({
           title="Tukar dengan versi terjemahan sebelumnya"
           className="rounded text-zinc-400 underline-offset-2 transition-colors hover:text-emerald-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-wait dark:hover:text-emerald-400"
         >
-          {busy === "revert" ? "Mengembalikan…" : "↩ Versi sebelumnya"}
+          {busy === "revert" ? (
+            "Mengembalikan…"
+          ) : (
+            <>
+              <span className="sm:hidden">↩ Kembalikan</span>
+              <span className="hidden sm:inline">↩ Versi sebelumnya</span>
+            </>
+          )}
         </button>
       )}
 

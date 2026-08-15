@@ -94,7 +94,7 @@ export function ReaderView({ page }: { page: ReaderPage }) {
   const pageHref = (targetPage: number) => `/books/${book.id}?page=${targetPage}`;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-6 sm:px-6">
+    <div className="mx-auto w-full max-w-3xl px-4 pb-4 pt-6 sm:px-6">
       {/* Sticky, and deliberately a sibling of <header> rather than a child of
           it: `position: sticky` is confined to its parent's box, so nested in
           the header this would scroll away the moment the header did — sticking
@@ -185,11 +185,10 @@ export function ReaderView({ page }: { page: ReaderPage }) {
             type="button"
             onClick={() => setViewMode(mode.value)}
             aria-pressed={viewMode === mode.value}
-            className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-              viewMode === mode.value
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-            }`}
+            className={`rounded-md px-3 py-1.5 text-sm transition-colors ${viewMode === mode.value
+              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+              : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              }`}
           >
             {mode.label}
           </button>
@@ -222,26 +221,39 @@ export function ReaderView({ page }: { page: ReaderPage }) {
         </div>
       )}
 
-      <div className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-        {lastOnScreen !== undefined && lastOnScreen > progress.lastReadIndex && (
-          <div className="mb-6 flex justify-center">
-            <button
-              type="button"
-              onClick={() => markRead(lastOnScreen)}
-              disabled={markingIndex !== null}
-              className="rounded-md cursor-pointer bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
-            >
-              {markingIndex === lastOnScreen
-                ? "Menyimpan…"
-                : `Tandai sudah dibaca sampai #${lastOnScreen}`}
-            </button>
-          </div>
-        )}
+      {/* Contextual, so it stays in the flow rather than joining the sticky bar
+          below: it belongs to the paragraphs that were just read, and it would
+          cost height the reader needs on a phone. */}
+      {lastOnScreen !== undefined && lastOnScreen > progress.lastReadIndex && (
+        <div className="mt-8 flex justify-center">
+          <button
+            type="button"
+            onClick={() => markRead(lastOnScreen)}
+            disabled={markingIndex !== null}
+            className="rounded-md cursor-pointer bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
+          >
+            {markingIndex === lastOnScreen
+              ? "Menyimpan…"
+              : `Tandai sudah dibaca sampai #${lastOnScreen}`}
+          </button>
+        </div>
+      )}
 
+      {/* Pinned to the bottom of the viewport so paging is always one tap away,
+          instead of only after scrolling 30 paragraphs to reach it.
+
+          Sticky, not fixed: it stays inside the layout, so it can't overlap the
+          footer of a short page and needs no width juggling. Like the two bars
+          at the top, it only works because its parent box spans the whole page —
+          nested inside the paragraph list it would scroll away with it.
+
+          The container's `pb-24` is what keeps the last paragraph from ending
+          up underneath it. */}
+      <div className="sticky bottom-0 z-10 -mx-4 mt-8 border-t border-zinc-200 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 dark:border-zinc-800 dark:bg-zinc-950/90">
         {/* Stacked on mobile (numbers first, then a full-width page picker);
             side by side on desktop, where `flex-1` keeps the existing centred
             pagination centred in the space left over by the jump control. */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
           <Pagination
             currentPage={pagination.currentPage}
             totalPages={pagination.totalPages}

@@ -76,7 +76,11 @@ export function ParagraphBlock({
           ))}
       </div>
 
-      <div className="mt-2 flex items-center gap-3 text-xs">
+      {/* `flex-wrap` plus `whitespace-nowrap` on every child: without the
+          former the row squeezes and each label wraps *inside itself*
+          ("Tandai / belum / dibaca"), which is what made this unreadable on a
+          phone. Now the line breaks between controls instead of through them. */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs [&_button]:whitespace-nowrap [&_span]:whitespace-nowrap">
         <span className="tabular-nums text-zinc-400 dark:text-zinc-600">
           #{paragraph.orderIndex}
         </span>
@@ -92,7 +96,7 @@ export function ParagraphBlock({
               disabled={isMarking}
               className="rounded cursor-pointer text-zinc-400 transition-colors hover:text-amber-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 disabled:cursor-wait disabled:opacity-70 dark:hover:text-amber-400"
             >
-              {isMarking ? "Menyimpan…" : "Tandai belum dibaca"}
+              {isMarking ? "Menyimpan…" : <ResponsiveLabel short="Batal dibaca" full="Tandai belum dibaca" />}
             </button>
           </>
         ) : (
@@ -102,7 +106,11 @@ export function ParagraphBlock({
             disabled={isMarking}
             className="rounded cursor-pointer text-zinc-400 transition-colors hover:text-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-wait dark:hover:text-emerald-400"
           >
-            {isMarking ? "Menyimpan…" : "Tandai sudah dibaca sampai sini"}
+            {isMarking ? (
+              "Menyimpan…"
+            ) : (
+              <ResponsiveLabel short="Tandai dibaca" full="Tandai sudah dibaca sampai sini" />
+            )}
           </button>
         )}
 
@@ -118,5 +126,21 @@ export function ParagraphBlock({
         )}
       </div>
     </article>
+  );
+}
+
+/**
+ * Two labels, one shown per breakpoint.
+ *
+ * A CSS breakpoint rather than a JS media query (CLAUDE.md): the server cannot
+ * know the viewport before hydration. `hidden` is `display: none`, so assistive
+ * tech only ever sees the one that is actually visible — no duplicate reading.
+ */
+function ResponsiveLabel({ short, full }: { short: string; full: string }) {
+  return (
+    <>
+      <span className="sm:hidden">{short}</span>
+      <span className="hidden sm:inline">{full}</span>
+    </>
   );
 }
