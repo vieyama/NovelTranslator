@@ -445,6 +445,17 @@ interface TranslationProvider {
     `validateModelName` accepts `/`; without that every OpenRouter model is
     rejected at save time. It also sends OpenRouter's optional `HTTP-Referer` /
     `X-Title` attribution pair, omitted when empty rather than sent blank.
+  - The curated entries come from OpenRouter's "Top models used by Free Models
+    Router", **with every id and price checked against `/api/v1/models`**. Two
+    of the five names on that page (`gpt-oss-120b`, `Tencent Hy3`) have no
+    `:free` variant at all, so appending the suffix — the obvious reading —
+    yields ids that fail at translate time. They are listed at their real,
+    cheap-but-paid prices rather than mislabelled as free. Re-check the same way
+    before editing this list; the catalogue moves.
+  - `openrouter/free` (the Free Models Router itself) is offered but is
+    deliberately **never the default**: it picks a free model at random per
+    request, so consecutive batches of one book can return in different styles —
+    the opposite of what the glossary and `translatedBy` exist to hold steady.
   - OpenRouter reports *upstream* vendor failures as HTTP 200 with an `error`
     object instead of `choices`, so that case is detected explicitly rather
     than surfacing as the much less useful "returned no choices".

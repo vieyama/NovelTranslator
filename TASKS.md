@@ -782,6 +782,17 @@ Notes:
         `missing_api_key` with progress untouched.
       - **The user pasted a live OpenRouter key into the chat** while asking for
         this. Flagged for rotation; it was never written to any file.
+      - **Model list revisited** at the user's request, sourced from OpenRouter's
+        "Top models used by Free Models Router". Every id and price was checked
+        against `/api/v1/models` first, which is what caught that two of the five
+        (`gpt-oss-120b`, `Tencent Hy3`) have **no `:free` variant** — appending
+        the suffix, the obvious reading of that page, would have produced ids
+        that fail at translate time. Listed at their real paid prices instead.
+        Default moved from `openai/gpt-4o` to the largest genuinely free entry,
+        and a check asserts the client's `defaultModel` still equals the first
+        entry in `AI_PROVIDERS` (what the form shows as "Default (…)").
+        `openrouter/free` is offered but never the default — random per-request
+        routing would vary translation style between batches of one book.
 
 - [x] Re-translate with undo (user request: "model A jelek, coba model B")
       - **Provenance was the missing half.** `Paragraph` recorded *when* it was

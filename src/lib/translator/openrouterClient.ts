@@ -24,7 +24,11 @@ export function createOpenRouterProvider(config: ProviderConfig): TranslationPro
       id: "openrouter",
       label: "OpenRouter",
       apiUrl: "https://openrouter.ai/api/v1/chat/completions",
-      defaultModel: "openai/gpt-4o",
+      // Was `openai/gpt-4o`. Now the strongest *free* model from OpenRouter's
+      // own Free Models Router list, matching how this provider is actually
+      // used here. Kept in sync with `AI_PROVIDERS`' first entry, which is what
+      // the settings form shows as "Default (…)".
+      defaultModel: "nvidia/nemotron-3-super-120b-a12b:free",
       modelEnvVar: "OPENROUTER_MODEL",
       temperature: 0.2,
       extraHeaders: attributionHeaders,

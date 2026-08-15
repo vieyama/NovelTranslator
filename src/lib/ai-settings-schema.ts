@@ -55,11 +55,36 @@ export const AI_PROVIDERS = [
     // point — "Model lain (isi manual)" is the real interface here. Ids carry a
     // vendor prefix and sometimes a `:free` suffix, which is why
     // `validateModelName` has to accept "/".
+    //
+    // Taken from OpenRouter's "Top models used by Free Models Router", with
+    // every id and price checked against /api/v1/models rather than assumed:
+    // **two of the five have no `:free` variant at all**, so appending the
+    // suffix to the names shown on that page would produce ids that 404 at
+    // translate time. They are listed at their real (paid, if cheap) prices
+    // instead of being quietly dropped or mislabelled.
+    //
+    // Free ones first — that is the point of the list — and the largest of them
+    // is the default, since translation quality is what this setting is for.
     models: [
-      { value: "openai/gpt-4o", label: "OpenAI GPT-4o" },
-      { value: "anthropic/claude-sonnet-4.5", label: "Anthropic Claude Sonnet 4.5" },
-      { value: "google/gemini-2.5-flash", label: "Google Gemini 2.5 Flash" },
-      { value: "mistralai/mistral-large", label: "Mistral Large" },
+      {
+        value: "nvidia/nemotron-3-super-120b-a12b:free",
+        label: "Nemotron 3 Super — gratis, konteks 262k",
+      },
+      {
+        value: "nvidia/nemotron-3-nano-30b-a3b:free",
+        label: "Nemotron 3 Nano 30B — gratis, konteks 256k",
+      },
+      { value: "openai/gpt-oss-20b:free", label: "gpt-oss-20b — gratis, konteks 131k" },
+      { value: "openai/gpt-oss-120b", label: "gpt-oss-120b — berbayar (murah), konteks 131k" },
+      { value: "tencent/hy3", label: "Tencent Hy3 — berbayar, konteks 262k" },
+      {
+        value: "openrouter/free",
+        // Deliberately last and never the default: it picks a free model at
+        // random per request, so consecutive batches of the same book can come
+        // back in different styles — the opposite of what the glossary and
+        // `translatedBy` exist to keep stable.
+        label: "Free Models Router — acak tiap permintaan, gaya bisa berubah",
+      },
     ],
   },
 ] as const;
