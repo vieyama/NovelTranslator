@@ -29,6 +29,22 @@ model Book {
 
   paragraphs    Paragraph[]
   progress      ReadingProgress?
+  tokenUsage    BookTokenUsage[]
+}
+
+model BookTokenUsage {
+  id           String   @id @default(cuid())
+  bookId       String
+  book         Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  provider     String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([bookId, provider, model])
+  @@index([bookId])
 }
 
 model Paragraph {
@@ -63,6 +79,11 @@ Design notes:
   query (`WHERE translatedText IS NULL`).
 - `lastTranslatedIndex` and `lastReadIndex` are kept separate, since translation
   may run ahead of reading, or the user may re-read earlier parts.
+- `BookTokenUsage` accumulates successful provider-reported token usage per
+  book, provider, and model. This deliberately does not collapse into one total
+  on `Book`: a single novel may use Gemini model A for 4k tokens, Gemini model B
+  for 2k, and Mistral model A for another 4k, and those numbers need to remain
+  distinguishable.
 
 ## 3. Features & Flow
 
@@ -78,8 +99,11 @@ Design notes:
     titles are text the reader wants, a small widening of the original "`<p>`
     tags only" rule. Documents using no block tags fall back to splitting on
     `</div>`/`<br>`. Entities are decoded and whitespace collapsed.
-  - **pdf**: extract text per page, then heuristic paragraph-splitting (blank
-    lines / indentation), needs cleanup for header/footer/page-number noise.
+  - **pdf** (built): extract text with `pdf-parse` / PDF.js, remove repeated
+    page-edge headers/footers and page markers, repair common hyphenated line
+    breaks, then heuristically reconstruct paragraphs from blank lines,
+    indentation, standalone chapter headings, and sentence-ended lines when the
+    PDF lost blank-line structure.
 - Save all paragraphs to the DB with a sequential `orderIndex`.
 - Create a new `ReadingProgress` record with both indexes at -1.
 
@@ -283,6 +307,20 @@ half a workflow without a way to redo what the old one produced.
   paragraphs and stops at an untranslated one. Filling gaps is the ordinary
   translate button's job; mixing the two would make "12 paragraf diterjemahkan
   ulang" untrue.
+
+### 3.7 Token Usage Tracking
+
+Every successful translation or re-translation batch increments
+`BookTokenUsage` for the exact `(bookId, provider, model)` that served the
+request. Providers normalize usage into `{ inputTokens, outputTokens }`; the app
+also stores `totalTokens = inputTokens + outputTokens` for display and simple
+reporting.
+
+Usage is written inside the same transaction as the paragraph updates, after the
+AI response has passed paragraph-count validation. A provider failure, refusal,
+truncated response, or separator/count mismatch leaves both paragraph text and
+token totals untouched. If a provider does not return usage, no row is written
+for that call rather than inventing an estimate.
 - API: `POST /api/translate` with `{ retranslate: true, fromIndex }`, and
   `POST /api/books/:id/paragraphs/:orderIndex/revert`.
 
@@ -293,7 +331,8 @@ as the way to refresh translations after correcting glossary terms.
 - List of all books, progress bar (`lastTranslatedIndex / totalParagraphs`),
   "Continue reading" / "Continue translating" buttons.
 - **Upload form** at the top of the page (`UploadBookForm`): file
-  (`.txt`/`.epub`) plus optional title/author, posting to `POST /api/books`.
+  (`.txt`/`.epub`/`.pdf`) plus optional title/author, posting to
+  `POST /api/books`.
   Title falls back to the filename when left empty. Parsing a large novel takes
   a few seconds, so the submit button reports progress via `useFormStatus`
   (see CLAUDE.md — a `useState` flag set inside the form action does not work).
@@ -418,7 +457,7 @@ interface TranslationProvider {
   translateBatch(request: { system: string; user: string }): Promise<{
     text: string;
     model: string;
-    usage?: unknown;
+    usage?: { inputTokens: number; outputTokens: number };
   }>;
 }
 ```

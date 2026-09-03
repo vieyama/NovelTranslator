@@ -70,8 +70,9 @@ detail.
 
 ## Code Structure
 
-- `src/lib/parser/` — one file per format (`txt.ts`, `epub.ts`, `pdf.ts`), all
-  exporting a function with the same signature: `parse(fileBuffer) => Paragraph[]`.
+- `src/lib/parser/` — one file per format (`txt.ts`, `epub.ts`, `pdf.ts`).
+  TXT/EPUB parsers are sync, PDF is async, and `books.ts` awaits the common
+  dispatch path before creating DB rows.
 - `src/lib/translator/` — provider-agnostic interface (`types.ts`) + one client
   per provider (`claudeClient.ts`, later `geminiClient.ts`), shared prompt
   builder (reads `TRANSLATION_RULES.md` + glossary terms), and response parser
@@ -201,9 +202,17 @@ Client Component, Node just doesn't set the condition Next does.
   batch just written is what moved it. If you touch this file, don't
   reintroduce "watermark = end of this batch" — it would silently leave a
   gap this codebase now allows misreported as the same as no gap at all.
-- **PDF parsing** (Phase 2) will be messy (headers/footers/page numbers get
-  extracted along with the text). Don't assume it'll be clean on the first try —
-  give the user a way to preview and clean up before committing to the DB.
+- **Token usage is per book, provider, and model.** Successful translate and
+  re-translate batches increment `BookTokenUsage` keyed by
+  `(bookId, provider, model)`, inside the same transaction as the paragraph
+  writes and only after response parsing succeeds. Do not collapse usage into a
+  single `Book` counter: switching from Gemini model A to Gemini model B or
+  Mistral model A must keep separate totals.
+- **PDF parsing is heuristic.** `pdf.ts` removes repeated page noise and rebuilds
+  paragraphs from extracted text, but PDFs do not store novel paragraphs as a
+  reliable semantic structure. If you improve this area, test with real PDFs and
+  prefer adding preview/cleanup controls over pretending extraction can be
+  perfect for every file.
 - **`themeColor` lives in a `viewport` export, not `metadata`.** This Next.js
   version rejects `metadata.themeColor` with a build warning (moved to
   `export const viewport: Viewport` / `generateViewport`, SPEC.md §3.5). Caught

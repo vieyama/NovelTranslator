@@ -29,14 +29,21 @@ This app removes the manual steps above by:
 
 ## Project Status
 
-🚧 Planning stage. See:
+Working personal app. Current highlights:
+- Import `.txt`, `.epub`, and `.pdf` novels into paragraph rows.
+- Read with paginated progress tracking.
+- Translate and re-translate batches with provider/model attribution.
+- Track token totals per book, provider, and model.
+- Store per-user AI provider settings and encrypted API keys.
+
+Reference docs:
 - `SPEC.md` — full technical spec / PRD
 - `TRANSLATION_RULES.md` — the translation prompt & rules (editable)
 - `GLOSSARY.md` — per-book terminology consistency
 - `TASKS.md` — step-by-step implementation checklist
 - `CLAUDE.md` — guidance for Claude Code working in this repo
 
-## Quick Start (once scaffolding is done)
+## Quick Start
 
 ```bash
 cp .env.local.example .env.local   # fill in the API keys
@@ -71,7 +78,7 @@ docker compose up -d --build
 docker compose logs migrate        # check this first if `app` never comes up
 ```
 
-## Folder Structure (planned)
+## Folder Structure
 
 ```
 novel-translator/

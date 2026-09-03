@@ -86,8 +86,9 @@ Notes:
   much higher, but the chunking is harmless under Postgres too, so the code
   wasn't changed). Verified with a 3000-paragraph upload: gapless order, no
   partial book.
-- Upload guards: `.txt` only (415), empty file (400), 20 MB cap (413), no
-  paragraphs found (422), non-multipart body (400).
+- Upload guards: unsupported extension (415), empty file (400), per-format file
+  size caps (20 MB `.txt`, 100 MB `.epub`/`.pdf`) (413), no paragraphs found
+  (422), non-multipart body (400).
 - No upload UI yet — Phase 2 is API-only, so the manual test is a `curl` command.
   The library UI arrives in Phase 4.
 
@@ -275,7 +276,25 @@ Notes:
         away under the `react-server` export condition, which plain Node does
         not set. Seed command is now
         `tsx --conditions=react-server prisma/seed.ts`; documented in CLAUDE.md.
-- [ ] PDF parser (`src/lib/parser/pdf.ts`) with cleanup/preview step
+- [x] PDF upload + parser (`src/lib/parser/pdf.ts`)
+      - Deps: `pdf-parse` (PDF.js-backed text extraction).
+      - Upload now accepts `.pdf` in the API and `UploadBookForm`.
+      - Parser removes repeated page headers/footers and bare page numbers, then
+        reconstructs paragraphs from blank lines, indentation, standalone
+        chapter headings, and sentence-ended lines when blank lines are not
+        preserved by extraction.
+      - Parser quality pass: rejects non-PDF files before invoking PDF.js,
+        removes repeated noise only from page-edge lines so repeated body prose
+        is not deleted, repairs hyphenated line breaks, normalizes punctuation
+        spacing, recognizes `Page N` / `N / M` markers, and assigns
+        `chapterIndex` from standalone chapter-like headings.
+      - `parseByFormat` is async now because PDF extraction is async; TXT/EPUB
+        behavior remains unchanged.
+      - Smoke-tested with a generated local PDF: chapter heading and two prose
+        paragraphs become three sequential parser rows.
+      - Verified with `bun run lint` and `bun run build`.
+      - Still future work: optional preview/cleanup UI for ugly PDFs, because
+        PDF extraction quality depends heavily on how the source file was made.
 - [ ] Provider fallback logic (try primary, fall back to the other provider on
       rate limit / error)
 - [ ] Background pre-translation (translate ahead while reading)
@@ -821,8 +840,24 @@ Notes:
         the old text and its provenance, leaves the watermark at 40, and does
         not touch paragraphs before `fromIndex`; revert restores text *and*
         provenance and stays re-undoable; guards refuse reverting without a
-        previous version, re-translating an untranslated paragraph, and another
-        user's book (404). Plus 9 browser checks on the controls.
+      previous version, re-translating an untranslated paragraph, and another
+      user's book (404). Plus 9 browser checks on the controls.
+
+- [x] Store per-book token usage by provider and model
+      - New `BookTokenUsage` table related to `Book`, keyed by
+        `(bookId, provider, model)`, with separate `inputTokens`,
+        `outputTokens`, and `totalTokens`.
+      - Normal translation and re-translation both increment the matching row
+        only after the provider response parses to the expected paragraph count.
+        The increment happens in the same transaction as the paragraph writes,
+        so a failed batch cannot charge the book in the database.
+      - Totals stay separated by concrete source: Gemini model A, Gemini model
+        B, Mistral model A, etc. never get mixed into one ambiguous book-level
+        counter.
+      - `/books` shows existing token totals under each book, with a tooltip
+        splitting input and output tokens.
+      - Verified with `bunx prisma generate`, `bun run lint`, and
+        `bun run build`.
 
 - [x] Several saved API keys per provider, switchable (user request: rotating
       when a free tier runs out meant re-pasting keys every time)

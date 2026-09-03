@@ -24,7 +24,7 @@ export async function GET() {
  * POST /api/books — upload & parse a novel.
  *
  * Expects multipart/form-data:
- *   file   (required) the .txt file
+ *   file   (required) the .txt, .epub, or .pdf file
  *   title  (optional) defaults to the filename without its extension
  *   author (optional)
  */

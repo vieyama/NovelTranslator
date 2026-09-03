@@ -107,6 +107,20 @@ export default async function BooksPage({
                       Dibaca {book.lastReadIndex + 1}/{book.totalParagraphs} ({book.readPercent}%)
                     </span>
                   </p>
+                  {book.tokenUsage.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
+                      {book.tokenUsage.map((usage) => (
+                        <span
+                          key={`${usage.provider}:${usage.model}`}
+                          className="rounded-md bg-zinc-100 px-2 py-1 tabular-nums dark:bg-zinc-900"
+                          title={`${usage.inputTokens.toLocaleString("id-ID")} input + ${usage.outputTokens.toLocaleString("id-ID")} output`}
+                        >
+                          {usage.provider} · {usage.model}:{" "}
+                          {usage.totalTokens.toLocaleString("id-ID")} token
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">

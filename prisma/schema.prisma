@@ -108,8 +108,28 @@ model Book {
   paragraphs    Paragraph[]
   progress      ReadingProgress?
   glossaryTerms GlossaryTerm[]
+  tokenUsage    BookTokenUsage[]
 
   @@index([userId])
+}
+
+// Per-book token totals, separated by provider and model. A single book may be
+// translated with Gemini model A, Gemini model B, and Mistral model A over time;
+// keeping one row per source preserves those totals instead of mixing them.
+model BookTokenUsage {
+  id     String @id @default(cuid())
+  bookId String
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  provider     String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([bookId, provider, model])
+  @@index([bookId])
 }
 
 model Paragraph {

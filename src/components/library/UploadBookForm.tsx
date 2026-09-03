@@ -21,7 +21,7 @@ export function UploadBookForm() {
     const file = form.get("file");
 
     if (!(file instanceof File) || file.size === 0) {
-      setError("Pilih file .txt atau .epub dulu.");
+      setError("Pilih file .txt, .epub, atau .pdf dulu.");
       return;
     }
 
@@ -66,11 +66,11 @@ export function UploadBookForm() {
 
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <label className="block text-xs text-zinc-600 dark:text-zinc-400">
-          File novel (.txt / .epub)
+          File novel (.txt / .epub / .pdf)
           <input
             type="file"
             name="file"
-            accept=".txt,.epub"
+            accept=".txt,.epub,.pdf,application/pdf"
             required
             className="mt-1 block w-full text-sm text-zinc-700 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-2 file:text-sm file:text-zinc-800 hover:file:bg-zinc-200 dark:text-zinc-300 dark:file:bg-zinc-800 dark:file:text-zinc-200 dark:hover:file:bg-zinc-700"
           />

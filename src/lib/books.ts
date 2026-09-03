@@ -6,17 +6,22 @@ import { DEFAULT_BOOK_SORT, type BookSort } from "@/lib/books-schema";
 import { prisma } from "@/lib/db";
 import { BookAccessError } from "@/lib/ownership";
 import { EpubParseError, parse as parseEpub } from "@/lib/parser/epub";
+import { PdfParseError, parse as parsePdf } from "@/lib/parser/pdf";
 import { parse as parseTxt } from "@/lib/parser/txt";
 import type { ParsedParagraph } from "@/lib/parser/types";
 
-/** Formats with a working parser; pdf lands later in Phase 7 (TASKS.md). */
-const SUPPORTED_FORMATS = ["txt", "epub"] as const;
+/** Formats with a working parser. */
+const SUPPORTED_FORMATS = ["txt", "epub", "pdf"] as const;
 type SupportedFormat = (typeof SUPPORTED_FORMATS)[number];
 
-/** Guard against accidentally uploading something enormous into SQLite. */
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
+/** Guard against accidentally uploading something enormous into memory/DB. */
+const MAX_FILE_BYTES_BY_FORMAT: Record<SupportedFormat, number> = {
+  txt: 20 * 1024 * 1024,
+  epub: 100 * 1024 * 1024,
+  pdf: 100 * 1024 * 1024,
+};
 
-/** SQLite has a bound-parameter limit, so paragraphs are inserted in chunks. */
+/** Keep bulk inserts comfortably below database/driver parameter limits. */
 const INSERT_CHUNK_SIZE = 500;
 
 export class BookImportError extends Error {
@@ -47,14 +52,16 @@ export async function createBookFromUpload({ userId, file, title, author }: Crea
   if (file.size === 0) {
     throw new BookImportError("File is empty.", 400);
   }
-  if (file.size > MAX_FILE_BYTES) {
+  const maxFileBytes = MAX_FILE_BYTES_BY_FORMAT[format];
+
+  if (file.size > maxFileBytes) {
     throw new BookImportError(
-      `File is ${formatBytes(file.size)}; the limit is ${formatBytes(MAX_FILE_BYTES)}.`,
+      `File is ${formatBytes(file.size)}; the limit for .${format} is ${formatBytes(maxFileBytes)}.`,
       413,
     );
   }
 
-  const paragraphs = parseByFormat(format, new Uint8Array(await file.arrayBuffer()));
+  const paragraphs = await parseByFormat(format, new Uint8Array(await file.arrayBuffer()));
 
   if (paragraphs.length === 0) {
     throw new BookImportError(
@@ -134,6 +141,16 @@ export interface BookSummary {
   translatedCount: number;
   translatedPercent: number;
   readPercent: number;
+  tokenUsage: BookTokenUsageSummary[];
+}
+
+export interface BookTokenUsageSummary {
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  updatedAt: Date;
 }
 
 /** Library listing with the progress summary the /books page needs (SPEC.md §3.4). */
@@ -151,7 +168,20 @@ export async function listBooksWithProgress(
     // `orderBy` and a JS comparator, and the library is a single user's
     // bookshelf (tens of rows), not something that scales with book length.
     orderBy: { createdAt: "desc" },
-    include: { progress: true },
+    include: {
+      progress: true,
+      tokenUsage: {
+        orderBy: [{ provider: "asc" }, { model: "asc" }],
+        select: {
+          provider: true,
+          model: true,
+          inputTokens: true,
+          outputTokens: true,
+          totalTokens: true,
+          updatedAt: true,
+        },
+      },
+    },
   });
 
   if (books.length === 0) return [];
@@ -197,6 +227,7 @@ export async function listBooksWithProgress(
       // so there is no gap for a count to disagree about. "+ 1" turns a 0-based
       // position into a count.
       readPercent: toPercent(lastReadIndex + 1, book.totalParagraphs),
+      tokenUsage: book.tokenUsage,
     };
   });
 
@@ -238,7 +269,7 @@ function compareTitles(a: BookSummary, b: BookSummary): number {
   return a.title.localeCompare(b.title, "id", { sensitivity: "base", numeric: true });
 }
 
-function parseByFormat(format: SupportedFormat, bytes: Uint8Array): ParsedParagraph[] {
+async function parseByFormat(format: SupportedFormat, bytes: Uint8Array): Promise<ParsedParagraph[]> {
   switch (format) {
     case "txt":
       return parseTxt(bytes);
@@ -248,6 +279,15 @@ function parseByFormat(format: SupportedFormat, bytes: Uint8Array): ParsedParagr
       } catch (error) {
         // A malformed EPUB is the user's file being wrong, not a server fault.
         if (error instanceof EpubParseError) {
+          throw new BookImportError(error.message, 422);
+        }
+        throw error;
+      }
+    case "pdf":
+      try {
+        return await parsePdf(bytes);
+      } catch (error) {
+        if (error instanceof PdfParseError) {
           throw new BookImportError(error.message, 422);
         }
         throw error;

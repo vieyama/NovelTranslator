@@ -156,6 +156,13 @@ export async function translateNextBatch({
       });
     }
 
+    await incrementBookTokenUsage(tx, {
+      bookId,
+      provider: activeProvider.id,
+      model: response.model,
+      usage: response.usage,
+    });
+
     return advanceWatermark(tx, bookId, lastTranslatedIndex, book.totalParagraphs);
   });
 
@@ -288,6 +295,13 @@ export async function retranslateBatch({
         },
       });
     }
+
+    await incrementBookTokenUsage(tx, {
+      bookId,
+      provider: activeProvider.id,
+      model: response.model,
+      usage: response.usage,
+    });
   });
 
   return {
@@ -458,6 +472,39 @@ async function advanceWatermark(
   }
 
   return watermark;
+}
+
+type TokenUsageClient = Pick<typeof prisma, "bookTokenUsage">;
+
+async function incrementBookTokenUsage(
+  db: TokenUsageClient,
+  {
+    bookId,
+    provider,
+    model,
+    usage,
+  }: {
+    bookId: string;
+    provider: string;
+    model: string;
+    usage?: { inputTokens: number; outputTokens: number };
+  },
+): Promise<void> {
+  if (!usage) return;
+
+  const inputTokens = Math.max(0, Math.floor(usage.inputTokens));
+  const outputTokens = Math.max(0, Math.floor(usage.outputTokens));
+  const totalTokens = inputTokens + outputTokens;
+
+  await db.bookTokenUsage.upsert({
+    where: { bookId_provider_model: { bookId, provider, model } },
+    create: { bookId, provider, model, inputTokens, outputTokens, totalTokens },
+    update: {
+      inputTokens: { increment: inputTokens },
+      outputTokens: { increment: outputTokens },
+      totalTokens: { increment: totalTokens },
+    },
+  });
 }
 
 /**
