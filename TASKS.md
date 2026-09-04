@@ -290,6 +290,10 @@ Notes:
         `chapterIndex` from standalone chapter-like headings.
       - `parseByFormat` is async now because PDF extraction is async; TXT/EPUB
         behavior remains unchanged.
+      - Runtime fix: `books.ts` lazy-loads `src/lib/parser/pdf.ts` only for
+        actual PDF uploads. Importing `pdf-parse` on the normal `/books` render
+        path made the standalone server evaluate PDF.js/canvas code and crash
+        with `ReferenceError: DOMMatrix is not defined`.
       - Smoke-tested with a generated local PDF: chapter heading and two prose
         paragraphs become three sequential parser rows.
       - Verified with `bun run lint` and `bun run build`.

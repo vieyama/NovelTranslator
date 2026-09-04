@@ -6,7 +6,6 @@ import { DEFAULT_BOOK_SORT, type BookSort } from "@/lib/books-schema";
 import { prisma } from "@/lib/db";
 import { BookAccessError } from "@/lib/ownership";
 import { EpubParseError, parse as parseEpub } from "@/lib/parser/epub";
-import { PdfParseError, parse as parsePdf } from "@/lib/parser/pdf";
 import { parse as parseTxt } from "@/lib/parser/txt";
 import type { ParsedParagraph } from "@/lib/parser/types";
 
@@ -285,14 +284,22 @@ async function parseByFormat(format: SupportedFormat, bytes: Uint8Array): Promis
       }
     case "pdf":
       try {
+        // `pdf-parse` touches browser-ish globals while the module is
+        // evaluated. Load it only for real PDF uploads so ordinary book listing
+        // never imports that dependency on the server render path.
+        const { parse: parsePdf } = await import("@/lib/parser/pdf");
         return await parsePdf(bytes);
       } catch (error) {
-        if (error instanceof PdfParseError) {
+        if (isNamedError(error, "PdfParseError")) {
           throw new BookImportError(error.message, 422);
         }
         throw error;
       }
   }
+}
+
+function isNamedError(error: unknown, name: string): error is Error {
+  return error instanceof Error && error.name === name;
 }
 
 function detectFormat(fileName: string): SupportedFormat {

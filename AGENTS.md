@@ -12,3 +12,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
   counter.
 - PDF upload is implemented through `src/lib/parser/pdf.ts` using `pdf-parse`;
   treat PDF paragraph splitting as heuristic and preserve `orderIndex` ordering.
+- Keep `src/lib/parser/pdf.ts` lazy-loaded from the `.pdf` branch. A top-level
+  `pdf-parse` import can crash the production server with missing `DOMMatrix`.
