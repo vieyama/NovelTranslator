@@ -211,9 +211,10 @@ Notes:
   `gemini-pro-latest` resolves to `gemini-3.1-pro`, which has a **free-tier quota
   of zero** — it 429s immediately. Set `GEMINI_MODEL=gemini-pro-latest` if the
   key is on a paid plan.
-- Gemini calls are non-streaming and can sit silent behind Cloudflare.
-  `geminiClient.ts` aborts after `GEMINI_TIMEOUT_MS` (default 85s) so the app
-  can return JSON before the proxy shows a generic 502, and
+- Gemini calls are non-streaming and can sit silent behind Cloudflare. The
+  translate endpoint sends keep-alive bytes while provider work runs, and
+  `geminiClient.ts` aborts after `GEMINI_TIMEOUT_MS` (default 240s) only as a
+  final stuck-request guard. This gives paid calls time to finish and save, and
   `translateNextBatch.ts` supports provider-specific batch defaults such as
   `GEMINI_MAX_CHARS` (compose default 1500).
 - Gemini failure mapping matches Claude's, so the watermark rules behave
@@ -833,6 +834,9 @@ Notes:
         still works for newer aliases.
       - Env fallback is `DEEPSEEK_API_KEY`; optional model override is
         `DEEPSEEK_MODEL`.
+      - Like Gemini, DeepSeek can be tuned separately behind Cloudflare:
+        `DEEPSEEK_MAX_CHARS` defaults to 1500 in Compose, and
+        `DEEPSEEK_TIMEOUT_MS` defaults to 240s.
       - Wired through `.env.local.example`, Docker Compose, and Drone secrets.
       - Verified with `bun run lint` and `bun run build`.
 
@@ -879,6 +883,18 @@ Notes:
         counter.
       - `/books` shows existing token totals under each book, with a tooltip
         splitting input and output tokens.
+      - Verified with `bunx prisma generate`, `bun run lint`, and
+        `bun run build`.
+
+- [x] Track highest translated paragraph separately from contiguous watermark
+      - Added `ReadingProgress.lastTranslatedParagraphIndex`, default `-1`.
+      - Migration backfills it from `MAX(Paragraph.orderIndex)` where
+        `translatedText IS NOT NULL`.
+      - Normal translation updates both values after successful writes:
+        `lastTranslatedIndex` remains the contiguous no-gap watermark, while
+        `lastTranslatedParagraphIndex` moves to the highest translated row even
+        for "Terjemahkan dari sini" starting at #100.
+      - Reader header now has a separate "Ke terjemahan terbaru" shortcut.
       - Verified with `bunx prisma generate`, `bun run lint`, and
         `bun run build`.
 

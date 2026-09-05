@@ -35,7 +35,7 @@ const DEFAULT_MODEL = "gemini-flash-latest";
 
 /** Matches the Claude client's ceiling; a truncated reply fails the batch. */
 const MAX_OUTPUT_TOKENS = 32_000;
-const DEFAULT_TIMEOUT_MS = 85_000;
+const DEFAULT_TIMEOUT_MS = 240_000;
 
 /** No module-level cache — see the note in claudeClient.ts (per-user keys). */
 

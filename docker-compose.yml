@@ -93,11 +93,15 @@ services:
       AUTH_URL: ${AUTH_URL:-}
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-claude}
       DEFAULT_MAX_CHARS: ${DEFAULT_MAX_CHARS:-3000}
-      # Gemini is non-streaming in this app and Cloudflare may cut off long
-      # silent requests. Keep its default batch smaller and abort before the
-      # proxy produces a generic 502.
+      # Translate endpoint sends keep-alive bytes while providers work. Keep
+      # provider timeouts below the route's 300s max so paid requests have time
+      # to finish and save, but truly stuck calls still end.
       GEMINI_MAX_CHARS: ${GEMINI_MAX_CHARS:-1500}
-      GEMINI_TIMEOUT_MS: ${GEMINI_TIMEOUT_MS:-85000}
+      GEMINI_TIMEOUT_MS: ${GEMINI_TIMEOUT_MS:-240000}
+      DEEPSEEK_MAX_CHARS: ${DEEPSEEK_MAX_CHARS:-1500}
+      DEEPSEEK_TIMEOUT_MS: ${DEEPSEEK_TIMEOUT_MS:-240000}
+      MISTRAL_TIMEOUT_MS: ${MISTRAL_TIMEOUT_MS:-240000}
+      OPENROUTER_TIMEOUT_MS: ${OPENROUTER_TIMEOUT_MS:-240000}
       # Every provider key is optional, and all are treated the same.
       #
       # Some were `:?` (required) back when a server-wide key was the only way

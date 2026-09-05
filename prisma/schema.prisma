@@ -175,9 +175,10 @@ model ReadingProgress {
 
   // Kept separate: translation may run ahead of reading, and the user may
   // re-read earlier parts. -1 means "nothing yet".
-  lastTranslatedIndex Int      @default(-1)
-  lastReadIndex       Int      @default(-1)
-  updatedAt           DateTime @updatedAt
+  lastTranslatedIndex          Int      @default(-1)
+  lastTranslatedParagraphIndex Int      @default(-1)
+  lastReadIndex                Int      @default(-1)
+  updatedAt                    DateTime @updatedAt
 }
 
 // Per-book terminology, injected into every translation prompt so names and

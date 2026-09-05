@@ -58,6 +58,7 @@ export interface ReaderPage {
   progress: {
     lastReadIndex: number;
     lastTranslatedIndex: number;
+    lastTranslatedParagraphIndex: number;
   };
   paragraphs: ReaderParagraph[];
   pagination: ReaderPagination;

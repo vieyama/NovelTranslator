@@ -48,6 +48,7 @@ export async function getReaderPage(
 
   const lastReadIndex = book.progress?.lastReadIndex ?? -1;
   const lastTranslatedIndex = book.progress?.lastTranslatedIndex ?? -1;
+  const lastTranslatedParagraphIndex = book.progress?.lastTranslatedParagraphIndex ?? -1;
 
   const totalPages = totalPagesFor(book.totalParagraphs, READER_PAGE_SIZE);
   const defaultPage = pageForIndex(lastReadIndex + 1, READER_PAGE_SIZE);
@@ -82,7 +83,7 @@ export async function getReaderPage(
       author: book.author,
       totalParagraphs: book.totalParagraphs,
     },
-    progress: { lastReadIndex, lastTranslatedIndex },
+    progress: { lastReadIndex, lastTranslatedIndex, lastTranslatedParagraphIndex },
     // `previousTranslatedText` is reduced to a boolean on purpose: the reader
     // only needs to know whether undo is available, and shipping a second full
     // copy of every paragraph to the browser would roughly double the payload.
@@ -190,7 +191,12 @@ export async function setLastReadIndex(bookId: string, userId: string, lastReadI
   return prisma.readingProgress.update({
     where: { bookId },
     data: { lastReadIndex },
-    select: { lastReadIndex: true, lastTranslatedIndex: true, updatedAt: true },
+    select: {
+      lastReadIndex: true,
+      lastTranslatedIndex: true,
+      lastTranslatedParagraphIndex: true,
+      updatedAt: true,
+    },
   });
 }
 

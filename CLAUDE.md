@@ -202,17 +202,25 @@ Client Component, Node just doesn't set the condition Next does.
   batch just written is what moved it. If you touch this file, don't
   reintroduce "watermark = end of this batch" — it would silently leave a
   gap this codebase now allows misreported as the same as no gap at all.
+- **`lastTranslatedParagraphIndex` is the highest translated row anywhere.**
+  Use this for "latest translated paragraph" navigation or diagnostics. Do not
+  use it to decide where the next default batch starts; gaps still matter for
+  `lastTranslatedIndex`.
 - **Token usage is per book, provider, and model.** Successful translate and
   re-translate batches increment `BookTokenUsage` keyed by
   `(bookId, provider, model)`, inside the same transaction as the paragraph
   writes and only after response parsing succeeds. Do not collapse usage into a
   single `Book` counter: switching from Gemini model A to Gemini model B or
   Mistral model A must keep separate totals.
-- **Gemini needs shorter, timed batches behind Cloudflare.** The Gemini SDK call
-  is non-streaming here, so a long silent request can become a Cloudflare 502
-  before the app returns JSON. `geminiClient.ts` aborts at
-  `GEMINI_TIMEOUT_MS` (default 85s) and `translateNextBatch.ts` honors
+- **Gemini needs shorter batches behind Cloudflare.** The Gemini SDK call is
+  non-streaming here, so the translate endpoint sends keep-alive bytes while it
+  works. `geminiClient.ts` still aborts at `GEMINI_TIMEOUT_MS` (default 240s)
+  as a stuck-request guard, and `translateNextBatch.ts` honors
   `GEMINI_MAX_CHARS` before `DEFAULT_MAX_CHARS`.
+- **OpenAI-compatible providers also time out deliberately.** Mistral,
+  OpenRouter, and DeepSeek use `fetch` in `openAiCompatible.ts`; that call
+  aborts via `<PROVIDER>_TIMEOUT_MS` or `TRANSLATION_TIMEOUT_MS`, default 240s.
+  DeepSeek also has a smaller Compose default via `DEEPSEEK_MAX_CHARS=1500`.
 - **PDF parsing is heuristic.** `pdf.ts` removes repeated page noise and rebuilds
   paragraphs from extracted text, but PDFs do not store novel paragraphs as a
   reliable semantic structure. If you improve this area, test with real PDFs and

@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { isApiFailure, readApiError } from "@/components/reader/apiError";
+
 /**
  * "Translate next batch" control, in the reader header (SPEC.md §3.3).
  *
@@ -41,11 +43,11 @@ export function TranslateBatchButton({
         body: JSON.stringify({ bookId }),
       });
 
-      const payload = await response.json();
+      const payload = await response.clone().json().catch(() => ({}));
 
-      if (!response.ok) {
+      if (!response.ok || isApiFailure(payload)) {
         // The API guarantees progress was not advanced, so retrying is safe.
-        setError(payload.error ?? "Terjemahan gagal.");
+        setError(await readApiError(response, payload, "Terjemahan gagal."));
         return;
       }
 
@@ -57,8 +59,12 @@ export function TranslateBatchButton({
 
       // Pull the freshly translated text into the server-rendered list.
       startTransition(() => router.refresh());
-    } catch {
-      setError("Tidak bisa menghubungi server. Cek apakah dev server masih jalan.");
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? `Tidak bisa menghubungi server: ${error.message}`
+          : "Tidak bisa menghubungi server.",
+      );
     } finally {
       setIsRequesting(false);
     }

@@ -162,6 +162,11 @@ export function ReaderView({ page }: { page: ReaderPage }) {
             bookId={book.id}
             targetIndex={progress.lastTranslatedIndex}
           />
+          <JumpToParagraphButton
+            label="↩ Ke terjemahan terbaru"
+            bookId={book.id}
+            targetIndex={progress.lastTranslatedParagraphIndex}
+          />
 
           {/* In the header rather than inline among the paragraphs: sitting next
               to a specific paragraph made it look like *that* index was what

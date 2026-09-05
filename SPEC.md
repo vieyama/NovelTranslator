@@ -66,6 +66,7 @@ model ReadingProgress {
   bookId              String   @id
   book                Book     @relation(fields: [bookId], references: [id])
   lastTranslatedIndex Int      @default(-1) // last orderIndex that has been translated
+  lastTranslatedParagraphIndex Int @default(-1) // highest translated orderIndex anywhere
   lastReadIndex       Int      @default(-1) // last orderIndex that has been read
   updatedAt           DateTime @updatedAt
 }
@@ -79,6 +80,12 @@ Design notes:
   query (`WHERE translatedText IS NULL`).
 - `lastTranslatedIndex` and `lastReadIndex` are kept separate, since translation
   may run ahead of reading, or the user may re-read earlier parts.
+- `lastTranslatedParagraphIndex` is separate from `lastTranslatedIndex`:
+  `lastTranslatedIndex` is the contiguous watermark before the first
+  untranslated gap, while `lastTranslatedParagraphIndex` is the highest
+  paragraph translated anywhere. Translating from paragraph #100 can therefore
+  leave `lastTranslatedIndex = -1` while setting
+  `lastTranslatedParagraphIndex = 100+`.
 - `BookTokenUsage` accumulates successful provider-reported token usage per
   book, provider, and model. This deliberately does not collapse into one total
   on `Book`: a single novel may use Gemini model A for 4k tokens, Gemini model B
@@ -535,7 +542,9 @@ GEMINI_API_KEY=
 TRANSLATION_PROVIDER=claude   # "claude" | "gemini" | "mistral" | "openrouter" | "deepseek"
 DEFAULT_MAX_CHARS=3000
 GEMINI_MAX_CHARS=1500         # optional provider-specific default
-GEMINI_TIMEOUT_MS=85000       # abort before Cloudflare's proxy timeout
+GEMINI_TIMEOUT_MS=240000      # below route max; endpoint heartbeats keep proxy alive
+DEEPSEEK_MAX_CHARS=1500       # optional provider-specific default
+DEEPSEEK_TIMEOUT_MS=240000    # OpenAI-compatible request timeout
 DEEPSEEK_API_KEY=
 DATABASE_URL="postgresql://user:password@localhost:5439/novel_translator_db?schema=public"
 

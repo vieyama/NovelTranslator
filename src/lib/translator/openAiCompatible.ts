@@ -48,6 +48,7 @@ export interface OpenAiCompatibleSpec {
 
 /** Matches the other clients' ceiling; a truncated reply fails the batch. */
 const MAX_TOKENS = 32_000;
+const DEFAULT_TIMEOUT_MS = 240_000;
 
 /** No module-level client cache — see the note in claudeClient.ts (per-user keys). */
 
@@ -88,12 +89,15 @@ async function translateBatch(
   }
 
   const model = config.model?.trim() || process.env[spec.modelEnvVar]?.trim() || spec.defaultModel;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), resolveTimeoutMs(spec.id));
 
   let response: Response;
 
   try {
     response = await fetch(spec.apiUrl, {
       method: "POST",
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -111,10 +115,23 @@ async function translateBatch(
       }),
     });
   } catch (error) {
+    if (
+      (error instanceof Error && error.name === "AbortError") ||
+      /abort|timeout|timed out/i.test(error instanceof Error ? error.message : String(error))
+    ) {
+      throw new TranslationError(
+        `${spec.label} took too long to answer. Retry with a smaller batch, or lower ${spec.id.toUpperCase()}_MAX_CHARS.`,
+        "provider_error",
+        504,
+      );
+    }
+
     throw new TranslationError(
       `Tidak bisa menghubungi ${spec.label}: ${error instanceof Error ? error.message : String(error)}`,
       "provider_error",
     );
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!response.ok) {
@@ -165,6 +182,16 @@ async function translateBatch(
       outputTokens: payload.usage?.completion_tokens ?? 0,
     },
   };
+}
+
+function resolveTimeoutMs(providerId: string): number {
+  const providerEnvVar = `${providerId.toUpperCase()}_TIMEOUT_MS`;
+  const configured = Number.parseInt(
+    process.env[providerEnvVar] ?? process.env.TRANSLATION_TIMEOUT_MS ?? "",
+    10,
+  );
+
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TIMEOUT_MS;
 }
 
 /**

@@ -82,7 +82,11 @@ export async function createBookFromUpload({ userId, file, title, author }: Crea
         totalParagraphs: paragraphs.length,
         progress: {
           // -1 = nothing translated, nothing read yet (SPEC.md §2).
-          create: { lastTranslatedIndex: -1, lastReadIndex: -1 },
+          create: {
+            lastTranslatedIndex: -1,
+            lastTranslatedParagraphIndex: -1,
+            lastReadIndex: -1,
+          },
         },
       },
     });
@@ -136,6 +140,7 @@ export interface BookSummary {
   totalParagraphs: number;
   createdAt: Date;
   lastTranslatedIndex: number;
+  lastTranslatedParagraphIndex: number;
   lastReadIndex: number;
   translatedCount: number;
   translatedPercent: number;
@@ -201,6 +206,7 @@ export async function listBooksWithProgress(
 
   const summaries = books.map((book) => {
     const lastTranslatedIndex = book.progress?.lastTranslatedIndex ?? -1;
+    const lastTranslatedParagraphIndex = book.progress?.lastTranslatedParagraphIndex ?? -1;
     const lastReadIndex = book.progress?.lastReadIndex ?? -1;
     const translatedCount = countByBookId.get(book.id) ?? 0;
 
@@ -212,6 +218,7 @@ export async function listBooksWithProgress(
       totalParagraphs: book.totalParagraphs,
       createdAt: book.createdAt,
       lastTranslatedIndex,
+      lastTranslatedParagraphIndex,
       lastReadIndex,
       translatedCount,
       // Counted, not derived from `lastTranslatedIndex`.

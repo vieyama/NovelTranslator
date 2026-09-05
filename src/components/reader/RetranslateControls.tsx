@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { describeTranslationSource } from "@/lib/reader-schema";
+import { isApiFailure, readApiError } from "@/components/reader/apiError";
 
 /**
  * Re-translate / undo controls for one already-translated paragraph
@@ -51,11 +52,11 @@ export function RetranslateControls({
         body: JSON.stringify({ bookId, fromIndex: orderIndex, retranslate: true }),
       });
 
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.clone().json().catch(() => ({}));
 
-      if (!response.ok) {
+      if (!response.ok || isApiFailure(payload)) {
         // The API guarantees the previous text is untouched on failure.
-        setError(payload.error ?? "Terjemahan ulang gagal.");
+        setError(await readApiError(response, payload, "Terjemahan ulang gagal."));
         return;
       }
 

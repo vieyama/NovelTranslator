@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { isApiFailure, readApiError } from "@/components/reader/apiError";
+
 /**
  * Per-paragraph "translate starting here" trigger (SPEC.md §3.2).
  *
@@ -36,16 +38,20 @@ export function TranslateFromHereButton({
         body: JSON.stringify({ bookId, fromIndex: orderIndex }),
       });
 
-      const payload = await response.json();
+      const payload = await response.clone().json().catch(() => ({}));
 
-      if (!response.ok) {
-        setError(payload.error ?? "Terjemahan gagal.");
+      if (!response.ok || isApiFailure(payload)) {
+        setError(await readApiError(response, payload, "Terjemahan gagal."));
         return;
       }
 
       startTransition(() => router.refresh());
-    } catch {
-      setError("Tidak bisa menghubungi server.");
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? `Tidak bisa menghubungi server: ${error.message}`
+          : "Tidak bisa menghubungi server.",
+      );
     } finally {
       setIsRequesting(false);
     }

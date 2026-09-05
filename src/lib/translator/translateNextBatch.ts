@@ -54,6 +54,7 @@ export interface TranslateNextBatchResult {
   paragraphs: TranslatedParagraph[];
   progress: {
     lastTranslatedIndex: number;
+    lastTranslatedParagraphIndex: number;
     lastReadIndex: number;
     totalParagraphs: number;
   };
@@ -98,6 +99,7 @@ export async function translateNextBatch({
   }
 
   const lastTranslatedIndex = book.progress?.lastTranslatedIndex ?? -1;
+  const lastTranslatedParagraphIndex = book.progress?.lastTranslatedParagraphIndex ?? -1;
   const lastReadIndex = book.progress?.lastReadIndex ?? -1;
 
   // Normally the anchor is the watermark; an explicit `fromIndex` anchors the
@@ -110,10 +112,11 @@ export async function translateNextBatch({
     // paragraphs there were already translated out of order (seeded data, or
     // an earlier explicit `fromIndex` batch), let the watermark catch up —
     // that's bookkeeping, not a claim about untranslated work.
-    const settledIndex = await advanceWatermark(
+    const settledProgress = await settleTranslationProgress(
       prisma,
       bookId,
       lastTranslatedIndex,
+      lastTranslatedParagraphIndex,
       book.totalParagraphs,
     );
 
@@ -121,7 +124,7 @@ export async function translateNextBatch({
       done: true,
       paragraphs: [],
       progress: {
-        lastTranslatedIndex: settledIndex,
+        ...settledProgress,
         lastReadIndex,
         totalParagraphs: book.totalParagraphs,
       },
@@ -162,7 +165,13 @@ export async function translateNextBatch({
       usage: response.usage,
     });
 
-    return advanceWatermark(tx, bookId, lastTranslatedIndex, book.totalParagraphs);
+    return settleTranslationProgress(
+      tx,
+      bookId,
+      lastTranslatedIndex,
+      lastTranslatedParagraphIndex,
+      book.totalParagraphs,
+    );
   });
 
   return {
@@ -173,7 +182,7 @@ export async function translateNextBatch({
       translatedText: parsed.paragraphs[position],
     })),
     progress: {
-      lastTranslatedIndex: newWatermark,
+      ...newWatermark,
       lastReadIndex,
       totalParagraphs: book.totalParagraphs,
     },
@@ -451,25 +460,38 @@ export function groupIntoBatch<T extends { charCount: number }>(
  * Pass a transaction client to read/write within the same transaction as the
  * paragraph writes that produced the new state.
  */
-async function advanceWatermark(
+async function settleTranslationProgress(
   db: Pick<typeof prisma, "paragraph" | "readingProgress">,
   bookId: string,
   lastTranslatedIndex: number,
+  lastTranslatedParagraphIndex: number,
   totalParagraphs: number,
-): Promise<number> {
+): Promise<{ lastTranslatedIndex: number; lastTranslatedParagraphIndex: number }> {
   const nextGap = await db.paragraph.findFirst({
     where: { bookId, orderIndex: { gt: lastTranslatedIndex }, translatedText: null },
     orderBy: { orderIndex: "asc" },
     select: { orderIndex: true },
   });
 
-  const watermark = nextGap ? nextGap.orderIndex - 1 : totalParagraphs - 1;
+  const maxTranslated = await db.paragraph.aggregate({
+    where: { bookId, translatedText: { not: null } },
+    _max: { orderIndex: true },
+  });
 
-  if (watermark !== lastTranslatedIndex) {
-    await db.readingProgress.update({ where: { bookId }, data: { lastTranslatedIndex: watermark } });
+  const watermark = nextGap ? nextGap.orderIndex - 1 : totalParagraphs - 1;
+  const highest = maxTranslated._max.orderIndex ?? -1;
+
+  if (watermark !== lastTranslatedIndex || highest !== lastTranslatedParagraphIndex) {
+    await db.readingProgress.update({
+      where: { bookId },
+      data: {
+        lastTranslatedIndex: watermark,
+        lastTranslatedParagraphIndex: highest,
+      },
+    });
   }
 
-  return watermark;
+  return { lastTranslatedIndex: watermark, lastTranslatedParagraphIndex: highest };
 }
 
 type TokenUsageClient = Pick<typeof prisma, "bookTokenUsage">;
