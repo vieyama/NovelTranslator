@@ -898,6 +898,17 @@ Notes:
       - Verified with `bunx prisma generate`, `bun run lint`, and
         `bun run build`.
 
+- [x] Manual paragraph editing
+      - Added `PATCH /api/books/:id/paragraphs/:orderIndex` for owner-scoped
+        edits to `originalText` and/or `translatedText`.
+      - Original edits update `charCount`.
+      - Translation edits set `translatedBy = "manual"`, preserve the previous
+        translated text/provenance for undo, and recompute both
+        `lastTranslatedIndex` and `lastTranslatedParagraphIndex`.
+      - Empty translated text clears the translation and can reopen a gap.
+      - Reader UI exposes inline edit controls for original and translation.
+      - Verified with `bun run lint` and `bun run build`.
+
 - [x] Several saved API keys per provider, switchable (user request: rotating
       when a free tier runs out meant re-pasting keys every time)
       - New `ApiKey` table + `AiProviderCredential.activeKeyId`. **The migration

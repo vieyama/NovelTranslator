@@ -315,6 +315,23 @@ half a workflow without a way to redo what the old one produced.
   translate button's job; mixing the two would make "12 paragraf diterjemahkan
   ulang" untrue.
 
+### 3.8 Manual Paragraph Edits
+
+Each reader paragraph can be edited in place:
+
+- **Original text** edits update `Paragraph.originalText` and `charCount`, so
+  future batch sizing uses the corrected source length.
+- **Translated text** edits update `Paragraph.translatedText`,
+  `translatedAt`, and set `translatedBy = "manual"`. The previous translation
+  and provenance move into `previousTranslatedText` / `previousTranslatedBy`,
+  so the existing undo mechanism can still recover the pre-edit version.
+- Clearing the translated text sets it back to `null`, making the paragraph
+  untranslated again. After any translated-text edit, both translation progress
+  fields are recomputed: the contiguous `lastTranslatedIndex` and the
+  highest-anywhere `lastTranslatedParagraphIndex`.
+- Endpoint: `PATCH /api/books/:id/paragraphs/:orderIndex`, scoped by owner like
+  every other book-id API.
+
 ### 3.7 Token Usage Tracking
 
 Every successful translation or re-translation batch increments

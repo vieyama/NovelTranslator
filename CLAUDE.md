@@ -206,6 +206,10 @@ Client Component, Node just doesn't set the condition Next does.
   Use this for "latest translated paragraph" navigation or diagnostics. Do not
   use it to decide where the next default batch starts; gaps still matter for
   `lastTranslatedIndex`.
+- **Manual paragraph edits are real data edits.** Editing original text must
+  update `charCount`. Editing translated text marks `translatedBy = "manual"`,
+  preserves the previous translation for undo, and recomputes both translation
+  progress fields because it can fill or reopen a gap.
 - **Token usage is per book, provider, and model.** Successful translate and
   re-translate batches increment `BookTokenUsage` keyed by
   `(bookId, provider, model)`, inside the same transaction as the paragraph

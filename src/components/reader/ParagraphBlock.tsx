@@ -3,6 +3,7 @@
 // From the schema module, not `@/lib/reader` — that one imports Prisma.
 import type { ReaderParagraph } from "@/lib/reader-schema";
 
+import { ParagraphTextEditor } from "./ParagraphTextEditor";
 import { RetranslateControls } from "./RetranslateControls";
 import { TranslateFromHereButton } from "./TranslateFromHereButton";
 import type { ViewMode } from "./types";
@@ -84,6 +85,13 @@ export function ParagraphBlock({
         <span className="tabular-nums text-zinc-400 dark:text-zinc-600">
           #{paragraph.orderIndex}
         </span>
+
+        <ParagraphTextEditor
+          bookId={bookId}
+          orderIndex={paragraph.orderIndex}
+          originalText={paragraph.originalText}
+          translatedText={paragraph.translatedText}
+        />
 
         {isRead ? (
           <>

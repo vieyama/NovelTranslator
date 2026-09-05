@@ -150,6 +150,104 @@ export async function revertTranslation(
   };
 }
 
+export async function updateParagraphText(
+  bookId: string,
+  userId: string,
+  orderIndex: number,
+  input: { originalText?: unknown; translatedText?: unknown },
+): Promise<{
+  paragraph: {
+    orderIndex: number;
+    originalText: string;
+    translatedText: string | null;
+    translatedBy: string | null;
+  };
+  progress: {
+    lastTranslatedIndex: number;
+    lastTranslatedParagraphIndex: number;
+  };
+}> {
+  await assertBookOwned(bookId, userId);
+
+  if (!Number.isInteger(orderIndex) || orderIndex < 0) {
+    throw new ProgressUpdateError("`orderIndex` must be a non-negative integer.", 400);
+  }
+
+  const data: {
+    originalText?: string;
+    charCount?: number;
+    translatedText?: string | null;
+    translatedAt?: Date | null;
+    translatedBy?: string | null;
+    previousTranslatedText?: string | null;
+    previousTranslatedBy?: string | null;
+  } = {};
+
+  if ("originalText" in input) {
+    if (typeof input.originalText !== "string" || input.originalText.trim().length === 0) {
+      throw new ProgressUpdateError("Teks asli tidak boleh kosong.", 400);
+    }
+
+    const originalText = input.originalText.trim();
+    data.originalText = originalText;
+    data.charCount = originalText.length;
+  }
+
+  const editsTranslation = "translatedText" in input;
+
+  if (editsTranslation) {
+    if (typeof input.translatedText !== "string") {
+      throw new ProgressUpdateError("Teks terjemahan harus berupa string.", 400);
+    }
+
+    const translatedText = input.translatedText.trim();
+    data.translatedText = translatedText.length > 0 ? translatedText : null;
+    data.translatedAt = translatedText.length > 0 ? new Date() : null;
+    data.translatedBy = translatedText.length > 0 ? "manual" : null;
+  }
+
+  if (Object.keys(data).length === 0) {
+    throw new ProgressUpdateError("Tidak ada perubahan untuk disimpan.", 400);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.paragraph.findFirst({
+      where: { bookId, orderIndex },
+      select: {
+        id: true,
+        translatedText: true,
+        translatedBy: true,
+      },
+    });
+
+    if (!existing) {
+      throw new ProgressUpdateError(`Paragraph #${orderIndex} not found.`, 404);
+    }
+
+    if (editsTranslation && existing.translatedText !== data.translatedText) {
+      data.previousTranslatedText = existing.translatedText;
+      data.previousTranslatedBy = existing.translatedBy;
+    }
+
+    const paragraph = await tx.paragraph.update({
+      where: { id: existing.id },
+      data,
+      select: {
+        orderIndex: true,
+        originalText: true,
+        translatedText: true,
+        translatedBy: true,
+      },
+    });
+
+    const progress = editsTranslation
+      ? await settleTranslationProgress(tx, bookId)
+      : await currentTranslationProgress(tx, bookId);
+
+    return { paragraph, progress };
+  });
+}
+
 export class ProgressUpdateError extends Error {
   constructor(
     message: string,
@@ -198,6 +296,48 @@ export async function setLastReadIndex(bookId: string, userId: string, lastReadI
       updatedAt: true,
     },
   });
+}
+
+async function settleTranslationProgress(
+  db: Pick<typeof prisma, "paragraph" | "readingProgress">,
+  bookId: string,
+): Promise<{ lastTranslatedIndex: number; lastTranslatedParagraphIndex: number }> {
+  const [nextGap, maxTranslated] = await Promise.all([
+    db.paragraph.findFirst({
+      where: { bookId, translatedText: null },
+      orderBy: { orderIndex: "asc" },
+      select: { orderIndex: true },
+    }),
+    db.paragraph.aggregate({
+      where: { bookId, translatedText: { not: null } },
+      _max: { orderIndex: true },
+    }),
+  ]);
+
+  const lastTranslatedIndex = nextGap ? nextGap.orderIndex - 1 : maxTranslated._max.orderIndex ?? -1;
+  const lastTranslatedParagraphIndex = maxTranslated._max.orderIndex ?? -1;
+
+  await db.readingProgress.update({
+    where: { bookId },
+    data: { lastTranslatedIndex, lastTranslatedParagraphIndex },
+  });
+
+  return { lastTranslatedIndex, lastTranslatedParagraphIndex };
+}
+
+async function currentTranslationProgress(
+  db: Pick<typeof prisma, "readingProgress">,
+  bookId: string,
+): Promise<{ lastTranslatedIndex: number; lastTranslatedParagraphIndex: number }> {
+  const progress = await db.readingProgress.findUnique({
+    where: { bookId },
+    select: { lastTranslatedIndex: true, lastTranslatedParagraphIndex: true },
+  });
+
+  return {
+    lastTranslatedIndex: progress?.lastTranslatedIndex ?? -1,
+    lastTranslatedParagraphIndex: progress?.lastTranslatedParagraphIndex ?? -1,
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {
