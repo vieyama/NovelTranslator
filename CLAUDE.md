@@ -193,19 +193,16 @@ Client Component, Node just doesn't set the condition Next does.
   exactly match the number sent. If the AI returns a mismatched count (missing or
   extra separators), mark that batch as failed and do NOT update
   `lastTranslatedIndex` — better to retry than to corrupt or shift the data.
-- **`lastTranslatedIndex` is a recomputed watermark, not "end of the last
-  batch".** Translation isn't required to happen strictly in order — an
-  explicit `fromIndex` (SPEC.md §3.2, `TranslateFromHereButton`) can translate
-  ahead of a gap. So after every batch, `translateNextBatch.ts`'s
-  `advanceWatermark` re-derives the watermark from actual DB state ("last
-  index before the next untranslated paragraph"), rather than assuming the
-  batch just written is what moved it. If you touch this file, don't
-  reintroduce "watermark = end of this batch" — it would silently leave a
-  gap this codebase now allows misreported as the same as no gap at all.
-- **`lastTranslatedParagraphIndex` is the highest translated row anywhere.**
-  Use this for "latest translated paragraph" navigation or diagnostics. Do not
-  use it to decide where the next default batch starts; gaps still matter for
-  `lastTranslatedIndex`.
+- **`lastTranslatedIndex` is recomputed from persisted paragraphs, not guessed
+  from the current batch.** Translation isn't required to happen strictly in
+  order — an explicit `fromIndex` (SPEC.md §3.2,
+  `TranslateFromHereButton`) can translate ahead of a gap. After every
+  successful batch, `translateNextBatch.ts` re-derives progress from actual DB
+  state as the highest `Paragraph.orderIndex` with non-null `translatedText`.
+  Do not set it from `batch.at(-1)` before writes succeed.
+- **`lastTranslatedParagraphIndex` currently mirrors `lastTranslatedIndex`.**
+  It stays for compatibility with UI/data that adopted the explicit field name
+  while debugging out-of-order translation progress.
 - **Manual paragraph edits are real data edits.** Editing original text must
   update `charCount`. Editing translated text marks `translatedBy = "manual"`,
   preserves the previous translation for undo, and recomputes both translation

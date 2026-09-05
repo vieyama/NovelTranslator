@@ -80,12 +80,11 @@ Design notes:
   query (`WHERE translatedText IS NULL`).
 - `lastTranslatedIndex` and `lastReadIndex` are kept separate, since translation
   may run ahead of reading, or the user may re-read earlier parts.
-- `lastTranslatedParagraphIndex` is separate from `lastTranslatedIndex`:
-  `lastTranslatedIndex` is the contiguous watermark before the first
-  untranslated gap, while `lastTranslatedParagraphIndex` is the highest
-  paragraph translated anywhere. Translating from paragraph #100 can therefore
-  leave `lastTranslatedIndex = -1` while setting
-  `lastTranslatedParagraphIndex = 100+`.
+- `lastTranslatedIndex` is the highest translated paragraph anywhere, based on
+  persisted `Paragraph.translatedText` rows. `lastTranslatedParagraphIndex`
+  currently mirrors it for compatibility with older UI/data that used the more
+  explicit name. Translating from paragraph #100 therefore moves both fields to
+  `100+`, even if paragraphs #0-#99 are still untranslated.
 - `BookTokenUsage` accumulates successful provider-reported token usage per
   book, provider, and model. This deliberately does not collapse into one total
   on `Book`: a single novel may use Gemini model A for 4k tokens, Gemini model B
@@ -120,7 +119,9 @@ Design notes:
 - Logic:
   1. Fetch paragraphs starting at `lastTranslatedIndex + 1` where
      `translatedText IS NULL` — or, if `fromIndex` was given, starting there
-     instead (see "Explicit start index" below).
+     instead (see "Explicit start index" below). Reader controls that show the
+     first untranslated paragraph pass it as `fromIndex`, so the label and
+     request stay aligned.
   2. Group consecutive paragraphs up to `maxChars` without exceeding it (never
      split a paragraph mid-way).
   3. Send to the AI with a translation prompt (system prompt stored in
@@ -129,28 +130,24 @@ Design notes:
      to preserve a paragraph separator, e.g. `\n\n---\n\n`, so it can be split
      back reliably).
   5. Update `translatedText` for each paragraph + `translatedAt`.
-  6. Recompute `lastTranslatedIndex` as "last index before the next
-     untranslated gap" (not simply "end of this batch" — see below).
+  6. Recompute `lastTranslatedIndex` from the database as
+     `MAX(Paragraph.orderIndex)` where `translatedText IS NOT NULL`.
 - Response: the newly translated paragraphs + the new index.
 
 **Explicit start index (`fromIndex`).** The reader isn't required to translate
 strictly in order. `fromIndex` starts the batch at that paragraph instead of
 `lastTranslatedIndex + 1`, so the reader can jump translation ahead to wherever
 they're reading (e.g. skip a stretch they don't need translated right now).
-Paragraphs between the old watermark and `fromIndex` are left untouched, not
-lost — `lastTranslatedIndex` simply stops representing "everything before this
-index is translated" and starts representing "translated *up to the first
-remaining gap*". Concretely, after every batch (explicit `fromIndex` or not),
-the watermark is recomputed by scanning forward from its current value for the
-first paragraph with `translatedText IS NULL`; the new watermark is the index
-right before that gap (or the last paragraph, if there is no gap). This means:
-- Translating out of order never desyncs anything the rest of the app reads
-  from `lastTranslatedIndex` — it just may not advance yet.
-- A later batch that happens to close a gap advances the watermark past the
-  whole newly-contiguous stretch in one step, not just past what that batch
-  itself translated.
+Paragraphs between the old latest translated position and `fromIndex` are left
+untouched, not lost. Concretely, after every successful batch (explicit
+`fromIndex` or not), the endpoint re-queries persisted paragraph state and sets
+translation progress to the highest translated `orderIndex`. This means:
+- Translating out of order immediately updates `lastTranslatedIndex` to the
+  latest translated position.
+- A failed provider call or parse mismatch cannot move progress because the
+  recompute happens only after paragraph rows are written successfully.
 - `firstUntranslatedIndex` / `translatedCount` (used by the reader and library
-  progress bars) are plain existence/count queries, not watermark-derived, so
+  progress bars) are plain existence/count queries, not index-derived, so
   they're accurate regardless of translation order.
 
 ### 3.3 Reader View
@@ -306,10 +303,9 @@ half a workflow without a way to redo what the old one produced.
   written until the reply arrives and `parseTranslationResponse` confirms the
   paragraph count; then it all lands in one transaction. Same contract as
   §3.2, and the reason the old text is never cleared "in preparation".
-- **Progress never moves.** Re-translation only replaces non-null text, so it
-  cannot open a gap and `lastTranslatedIndex` is meaningless to it.
-  `advanceWatermark` is deliberately not called — there is nothing it could
-  correctly change, and calling it would invite the belief that it might.
+- **Progress never moves.** Re-translation only replaces non-null text, so the
+  latest translated position is already represented. Recomputing it here would
+  invite the belief that re-translation can fill gaps.
 - `findTranslatedRun` is the mirror of `findPendingRun`: it collects translated
   paragraphs and stops at an untranslated one. Filling gaps is the ordinary
   translate button's job; mixing the two would make "12 paragraf diterjemahkan
@@ -327,8 +323,7 @@ Each reader paragraph can be edited in place:
   so the existing undo mechanism can still recover the pre-edit version.
 - Clearing the translated text sets it back to `null`, making the paragraph
   untranslated again. After any translated-text edit, both translation progress
-  fields are recomputed: the contiguous `lastTranslatedIndex` and the
-  highest-anywhere `lastTranslatedParagraphIndex`.
+  fields are recomputed from persisted paragraph rows and kept in sync.
 - Endpoint: `PATCH /api/books/:id/paragraphs/:orderIndex`, scoped by owner like
   every other book-id API.
 
@@ -371,12 +366,11 @@ as the way to refresh translations after correcting glossary terms.
 - **Progress percentages use different bases, on purpose.** "Diterjemahkan" is
   the *count* of paragraphs with translated text; "Dibaca" is the
   `lastReadIndex` watermark. Reading is genuinely "read up to here", so a
-  watermark describes it exactly. Translation is not: `fromIndex` (§3.2) lets a
-  batch run ahead of a gap, and `lastTranslatedIndex` then stops at that gap —
-  a book with 20 paragraphs translated but a gap at the start reported **0%**
-  next to a "20/2879" taken from the real count. The number and the percentage
-  now describe the same thing, and the sort comparators use the same basis as
-  the figure they order by.
+  watermark describes it exactly. Translation can happen out of order via
+  `fromIndex` (§3.2), so the percentage uses the count of translated rows
+  rather than deriving from the latest translated index. The number and the
+  percentage describe the same thing, and the sort comparators use the same
+  basis as the figure they order by.
 - **Delete button** per book (`DeleteBookButton`) calling
   `DELETE /api/books/:id`. Deletion cascades to paragraphs, progress, and
   glossary terms — including all translated text — so the UI confirms with an

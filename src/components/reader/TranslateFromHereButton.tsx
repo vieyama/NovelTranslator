@@ -8,10 +8,9 @@ import { isApiFailure, readApiError } from "@/components/reader/apiError";
 /**
  * Per-paragraph "translate starting here" trigger (SPEC.md §3.2).
  *
- * Unlike `TranslateBatchButton` (which always continues from the watermark),
- * this jumps translation ahead to wherever the reader is, skipping over any
- * untranslated paragraphs still sitting behind it — those stay untranslated
- * until a later batch (the banner, or another one of these) fills them in.
+ * This jumps translation ahead to wherever the reader is, skipping over any
+ * untranslated paragraphs still sitting behind it. Those stay untranslated
+ * until a later batch fills them in.
  */
 export function TranslateFromHereButton({
   bookId,

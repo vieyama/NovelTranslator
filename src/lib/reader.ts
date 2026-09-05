@@ -261,7 +261,7 @@ export class ProgressUpdateError extends Error {
 /**
  * Moves the reading position (SPEC.md §4 — `PATCH /api/books/:id/progress`).
  *
- * Unlike `lastTranslatedIndex`, this may move backwards: re-reading an earlier
+ * Unlike translation progress, this may move backwards: re-reading an earlier
  * chapter is a normal thing to do.
  */
 export async function setLastReadIndex(bookId: string, userId: string, lastReadIndex: number) {
@@ -302,27 +302,22 @@ async function settleTranslationProgress(
   db: Pick<typeof prisma, "paragraph" | "readingProgress">,
   bookId: string,
 ): Promise<{ lastTranslatedIndex: number; lastTranslatedParagraphIndex: number }> {
-  const [nextGap, maxTranslated] = await Promise.all([
-    db.paragraph.findFirst({
-      where: { bookId, translatedText: null },
-      orderBy: { orderIndex: "asc" },
-      select: { orderIndex: true },
-    }),
-    db.paragraph.aggregate({
-      where: { bookId, translatedText: { not: null } },
-      _max: { orderIndex: true },
-    }),
-  ]);
+  const maxTranslated = await db.paragraph.aggregate({
+    where: { bookId, translatedText: { not: null } },
+    _max: { orderIndex: true },
+  });
 
-  const lastTranslatedIndex = nextGap ? nextGap.orderIndex - 1 : maxTranslated._max.orderIndex ?? -1;
-  const lastTranslatedParagraphIndex = maxTranslated._max.orderIndex ?? -1;
+  const highest = maxTranslated._max.orderIndex ?? -1;
 
   await db.readingProgress.update({
     where: { bookId },
-    data: { lastTranslatedIndex, lastTranslatedParagraphIndex },
+    data: {
+      lastTranslatedIndex: highest,
+      lastTranslatedParagraphIndex: highest,
+    },
   });
 
-  return { lastTranslatedIndex, lastTranslatedParagraphIndex };
+  return { lastTranslatedIndex: highest, lastTranslatedParagraphIndex: highest };
 }
 
 async function currentTranslationProgress(

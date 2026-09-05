@@ -13,15 +13,15 @@ export const maxDuration = 300;
  *
  * Body (JSON): { bookId: string, maxChars?: number, fromIndex?: number }
  *
- * `fromIndex` jumps the batch to start at that paragraph instead of
- * continuing from `lastTranslatedIndex` — any still-untranslated paragraphs
- * left behind stay that way until a later call fills them in.
+ * `fromIndex` jumps the batch to start at that paragraph instead of the latest
+ * translated position. Any still-untranslated paragraphs left behind stay that
+ * way until a later call fills them in.
  *
  * Validation failures return normal non-2xx JSON. Provider-work responses are
  * streamed with keep-alive whitespace and then a final JSON payload
  * (`ok: true` / `ok: false`) so Cloudflare/reverse proxies do not give up while
- * the provider is still working. On any failure `lastTranslatedIndex` is left
- * exactly where it was, so the same batch can simply be retried.
+ * the provider is still working. On any failure progress is left exactly where
+ * it was, so the same batch can simply be retried.
  */
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
@@ -94,8 +94,8 @@ export async function POST(request: Request) {
           durationMs: Date.now() - startedAt,
         });
 
-        // `done` and `progress` are deliberately absent: re-translation never
-        // moves the watermark, and reporting progress here would imply it might.
+        // `done` and `progress` are deliberately absent: re-translation only
+        // replaces existing text, so it does not change translate position.
         return { ok: true, ...result, retranslated: true };
       }
 

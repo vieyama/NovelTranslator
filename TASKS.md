@@ -886,15 +886,19 @@ Notes:
       - Verified with `bunx prisma generate`, `bun run lint`, and
         `bun run build`.
 
-- [x] Track highest translated paragraph separately from contiguous watermark
+- [x] Make translate progress follow the highest persisted translated paragraph
       - Added `ReadingProgress.lastTranslatedParagraphIndex`, default `-1`.
       - Migration backfills it from `MAX(Paragraph.orderIndex)` where
         `translatedText IS NOT NULL`.
-      - Normal translation updates both values after successful writes:
-        `lastTranslatedIndex` remains the contiguous no-gap watermark, while
-        `lastTranslatedParagraphIndex` moves to the highest translated row even
-        for "Terjemahkan dari sini" starting at #100.
-      - Reader header now has a separate "Ke terjemahan terbaru" shortcut.
+      - Normal translation now updates both values after successful writes:
+        `lastTranslatedIndex` and `lastTranslatedParagraphIndex` both become
+        the highest translated row even for "Terjemahkan dari sini" starting at
+        #100.
+      - Added a follow-up migration to sync already-deployed databases where
+        `lastTranslatedIndex` was still the older before-gap value.
+      - Reader header keeps the "Ke terjemahan terbaru" shortcut, and the
+        normal batch button now sends the displayed first untranslated index as
+        `fromIndex`.
       - Verified with `bunx prisma generate`, `bun run lint`, and
         `bun run build`.
 

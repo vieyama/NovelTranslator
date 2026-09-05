@@ -221,13 +221,9 @@ export async function listBooksWithProgress(
       lastTranslatedParagraphIndex,
       lastReadIndex,
       translatedCount,
-      // Counted, not derived from `lastTranslatedIndex`.
-      //
-      // That watermark stops at the first untranslated gap, so translating past
-      // one (which `fromIndex` explicitly allows — SPEC.md §3.2) pins it in
-      // place: a book with 20 paragraphs translated but a gap at the very start
-      // would report 0%, right beside a "20/2879" taken from the real count.
-      // The number and the percentage have to describe the same thing.
+      // Counted, not derived from `lastTranslatedIndex`: translating from a
+      // later paragraph can make that index high while leaving earlier gaps.
+      // The displayed number and percentage should describe the same thing.
       translatedPercent: toPercent(translatedCount, book.totalParagraphs),
       // Reading, by contrast, genuinely is a watermark — "read up to here" —
       // so there is no gap for a count to disagree about. "+ 1" turns a 0-based

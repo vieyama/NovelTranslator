@@ -13,11 +13,10 @@ import { TranslationError, type TranslationProvider } from "./types";
 /**
  * Translates the next batch of a book (SPEC.md §3.2).
  *
- * The invariant that governs this whole file: `lastTranslatedIndex` only ever
- * advances over paragraphs that are actually translated and stored. Any failure
- * — provider error, refusal, paragraph-count mismatch — leaves both the
- * paragraphs and the progress row untouched, so a retry is always safe
- * (CLAUDE.md → Non-Negotiables).
+ * The invariant that governs this whole file: translation progress only moves
+ * after paragraphs are actually translated and stored. Any failure — provider
+ * error, refusal, paragraph-count mismatch — leaves both the paragraphs and the
+ * progress row untouched, so a retry is always safe.
  */
 
 const DEFAULT_MAX_CHARS = 3000;
@@ -29,11 +28,9 @@ export interface TranslateNextBatchInput {
   bookId: string;
   maxChars?: number;
   /**
-   * Translate starting at this paragraph instead of continuing from
-   * `lastTranslatedIndex`. Anything still untranslated between the watermark
-   * and this index is left untouched (not skipped forever — a later call,
-   * from either the watermark or another explicit index, fills it in and the
-   * watermark catches up automatically, see `advanceWatermark`).
+   * Translate starting at this paragraph instead of continuing after the latest
+   * translated paragraph. Anything still untranslated before this index is left
+   * untouched and can be filled with another explicit request later.
    */
   fromIndex?: number;
   /** Owner of the book; scopes the lookup and selects whose API key is used. */
@@ -102,22 +99,19 @@ export async function translateNextBatch({
   const lastTranslatedParagraphIndex = book.progress?.lastTranslatedParagraphIndex ?? -1;
   const lastReadIndex = book.progress?.lastReadIndex ?? -1;
 
-  // Normally the anchor is the watermark; an explicit `fromIndex` anchors the
-  // search there instead, so the run can start ahead of a still-untranslated gap.
+  // Normally the anchor is the latest translated position; an explicit
+  // `fromIndex` anchors the search there instead.
   const anchor = fromIndex !== undefined ? fromIndex - 1 : lastTranslatedIndex;
   const pending = await findPendingRun(bookId, anchor);
 
   if (pending.length === 0) {
-    // Nothing to send from the anchor onward. If that's only true because
-    // paragraphs there were already translated out of order (seeded data, or
-    // an earlier explicit `fromIndex` batch), let the watermark catch up —
-    // that's bookkeeping, not a claim about untranslated work.
+    // Nothing to send from the anchor onward. Recompute from actual paragraph
+    // state so progress can settle after manual edits or seeded data.
     const settledProgress = await settleTranslationProgress(
       prisma,
       bookId,
       lastTranslatedIndex,
       lastTranslatedParagraphIndex,
-      book.totalParagraphs,
     );
 
     return {
@@ -170,7 +164,6 @@ export async function translateNextBatch({
       bookId,
       lastTranslatedIndex,
       lastTranslatedParagraphIndex,
-      book.totalParagraphs,
     );
   });
 
@@ -228,9 +221,8 @@ export interface RetranslateResult {
  *   moves to `previousTranslatedText` before being overwritten, so a worse
  *   result can be reverted per paragraph.
  * - **Progress never moves.** Re-translation only ever replaces non-null text,
- *   so it cannot open a gap, so `lastTranslatedIndex` is meaningless to it.
- *   `advanceWatermark` is deliberately not called: there is nothing it could
- *   correctly change, and calling it would invite the belief that it might.
+ *   so the latest translated position is already represented. Recomputing it
+ *   here would invite the belief that re-translation can fill gaps.
  */
 export async function retranslateBatch({
   bookId,
@@ -449,49 +441,34 @@ export function groupIntoBatch<T extends { charCount: number }>(
 }
 
 /**
- * Recomputes the watermark as "last index before the next untranslated gap",
- * and persists it if it moved.
- *
- * This is what lets `lastTranslatedIndex` catch up over paragraphs translated
- * out of order (via an explicit `fromIndex`, or seeded data): it doesn't
- * assume the just-written batch is what advances the watermark — it always
- * looks at actual DB state, so a later batch that happens to close an earlier
- * gap advances the watermark past that whole now-contiguous stretch in one go.
- * Pass a transaction client to read/write within the same transaction as the
- * paragraph writes that produced the new state.
+ * Recomputes translation progress from actual paragraph state. Both fields are
+ * kept equal for now: the app's practical "last translated index" is the
+ * highest translated paragraph anywhere, including explicit jump translations.
  */
 async function settleTranslationProgress(
   db: Pick<typeof prisma, "paragraph" | "readingProgress">,
   bookId: string,
   lastTranslatedIndex: number,
   lastTranslatedParagraphIndex: number,
-  totalParagraphs: number,
 ): Promise<{ lastTranslatedIndex: number; lastTranslatedParagraphIndex: number }> {
-  const nextGap = await db.paragraph.findFirst({
-    where: { bookId, orderIndex: { gt: lastTranslatedIndex }, translatedText: null },
-    orderBy: { orderIndex: "asc" },
-    select: { orderIndex: true },
-  });
-
   const maxTranslated = await db.paragraph.aggregate({
     where: { bookId, translatedText: { not: null } },
     _max: { orderIndex: true },
   });
 
-  const watermark = nextGap ? nextGap.orderIndex - 1 : totalParagraphs - 1;
   const highest = maxTranslated._max.orderIndex ?? -1;
 
-  if (watermark !== lastTranslatedIndex || highest !== lastTranslatedParagraphIndex) {
+  if (highest !== lastTranslatedIndex || highest !== lastTranslatedParagraphIndex) {
     await db.readingProgress.update({
       where: { bookId },
       data: {
-        lastTranslatedIndex: watermark,
+        lastTranslatedIndex: highest,
         lastTranslatedParagraphIndex: highest,
       },
     });
   }
 
-  return { lastTranslatedIndex: watermark, lastTranslatedParagraphIndex: highest };
+  return { lastTranslatedIndex: highest, lastTranslatedParagraphIndex: highest };
 }
 
 type TokenUsageClient = Pick<typeof prisma, "bookTokenUsage">;

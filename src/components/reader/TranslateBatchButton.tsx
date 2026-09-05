@@ -40,7 +40,7 @@ export function TranslateBatchButton({
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookId }),
+        body: JSON.stringify({ bookId, fromIndex: startIndex }),
       });
 
       const payload = await response.clone().json().catch(() => ({}));
