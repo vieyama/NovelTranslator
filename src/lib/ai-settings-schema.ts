@@ -87,6 +87,16 @@ export const AI_PROVIDERS = [
       },
     ],
   },
+  {
+    value: "deepseek",
+    label: "DeepSeek",
+    keyHint: "platform.deepseek.com",
+    keyPlaceholder: "sk-…",
+    models: [
+      { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash — cepat" },
+      { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro — lebih kuat" },
+    ],
+  },
 ] as const;
 
 export type AiProviderName = (typeof AI_PROVIDERS)[number]["value"];

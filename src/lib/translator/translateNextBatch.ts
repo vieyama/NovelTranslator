@@ -70,8 +70,6 @@ export async function translateNextBatch({
   fromIndex,
   provider,
 }: TranslateNextBatchInput): Promise<TranslateNextBatchResult> {
-  const effectiveMaxChars = resolveMaxChars(maxChars);
-
   // Scoped by owner: translating someone else's book reads as "not found",
   // and spending their API budget is not possible (SPEC.md §8).
   const book = await prisma.book.findFirst({
@@ -86,6 +84,7 @@ export async function translateNextBatch({
   // Resolved after the ownership check so a probe can't tell a missing book
   // from a missing API key.
   const activeProvider = provider ?? (await resolveProviderForUser(userId));
+  const effectiveMaxChars = resolveMaxChars(maxChars, activeProvider.id);
 
   if (
     fromIndex !== undefined &&
@@ -231,8 +230,6 @@ export async function retranslateBatch({
   maxChars,
   provider,
 }: RetranslateInput): Promise<RetranslateResult> {
-  const effectiveMaxChars = resolveMaxChars(maxChars);
-
   const book = await prisma.book.findFirst({
     where: { id: bookId, userId },
     include: { glossaryTerms: { orderBy: { term: "asc" } } },
@@ -251,6 +248,7 @@ export async function retranslateBatch({
   }
 
   const activeProvider = provider ?? (await resolveProviderForUser(userId));
+  const effectiveMaxChars = resolveMaxChars(maxChars, activeProvider.id);
 
   const run = await findTranslatedRun(bookId, fromIndex);
 
@@ -518,8 +516,12 @@ async function resolveProviderForUser(userId: string): Promise<TranslationProvid
   return resolveProvider({ apiKey: config.apiKey, model: config.model }, config.provider);
 }
 
-function resolveMaxChars(requested?: number): number {
-  const configured = Number.parseInt(process.env.DEFAULT_MAX_CHARS ?? "", 10);
+function resolveMaxChars(requested: number | undefined, providerId: string): number {
+  const providerEnvVar = `${providerId.toUpperCase()}_MAX_CHARS`;
+  const configured = Number.parseInt(
+    process.env[providerEnvVar] ?? process.env.DEFAULT_MAX_CHARS ?? "",
+    10,
+  );
   const fallback = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_CHARS;
   const value = requested ?? fallback;
 

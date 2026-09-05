@@ -35,6 +35,7 @@ const DEFAULT_MODEL = "gemini-flash-latest";
 
 /** Matches the Claude client's ceiling; a truncated reply fails the batch. */
 const MAX_OUTPUT_TOKENS = 32_000;
+const DEFAULT_TIMEOUT_MS = 85_000;
 
 /** No module-level cache — see the note in claudeClient.ts (per-user keys). */
 
@@ -51,6 +52,9 @@ async function translateBatch(
 ): Promise<TranslationResponse> {
   const client = getClient(config.apiKey);
   const model = config.model?.trim() || process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+  const timeoutMs = resolveTimeoutMs();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: GenerateContentResponse;
 
@@ -63,10 +67,13 @@ async function translateBatch(
         // Claude client sends as `system`.
         systemInstruction: request.system,
         maxOutputTokens: MAX_OUTPUT_TOKENS,
+        abortSignal: controller.signal,
       },
     });
   } catch (error) {
     throw toTranslationError(error);
+  } finally {
+    clearTimeout(timeout);
   }
 
   assertUsableResponse(response);
@@ -164,6 +171,17 @@ function toTranslationError(error: unknown): TranslationError {
 
   const message = error instanceof Error ? error.message : String(error);
 
+  if (
+    (error instanceof Error && error.name === "AbortError") ||
+    /abort|timeout|timed out/i.test(message)
+  ) {
+    return new TranslationError(
+      "Gemini took too long to answer. Retry with a smaller batch, or lower GEMINI_MAX_CHARS.",
+      "provider_error",
+      504,
+    );
+  }
+
   // The SDK surfaces HTTP failures as errors carrying the status in the text.
   if (/\b401\b|\b403\b|API key/i.test(message)) {
     return new TranslationError(
@@ -182,4 +200,10 @@ function toTranslationError(error: unknown): TranslationError {
   }
 
   return new TranslationError(`Gemini API error: ${message}`, "provider_error");
+}
+
+function resolveTimeoutMs(): number {
+  const configured = Number.parseInt(process.env.GEMINI_TIMEOUT_MS ?? "", 10);
+
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TIMEOUT_MS;
 }

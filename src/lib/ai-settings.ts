@@ -50,6 +50,7 @@ const ENV_KEY_BY_PROVIDER: Record<AiProviderName, string> = {
   gemini: "GEMINI_API_KEY",
   mistral: "MISTRAL_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
 };
 
 function envKeyFor(provider: AiProviderName): string | null {

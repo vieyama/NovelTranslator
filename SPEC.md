@@ -466,7 +466,7 @@ interface TranslationProvider {
   adaptive thinking + server-side model fallback).
 - `geminiClient.ts` — Google Gemini, via `@google/genai` (typed finish reasons,
   "thought" parts filtered out of the reply).
-- `mistralClient.ts` / `openrouterClient.ts` — both speak the OpenAI
+- `mistralClient.ts` / `openrouterClient.ts` / `deepseekClient.ts` — all speak the OpenAI
   chat-completions shape, so the transport lives once in
   `openAiCompatible.ts` and each file is just configuration (URL, default
   model, headers). Two copies would drift: a fix to the finish-reason handling
@@ -498,8 +498,11 @@ interface TranslationProvider {
   - OpenRouter reports *upstream* vendor failures as HTTP 200 with an `error`
     object instead of `choices`, so that case is detected explicitly rather
     than surfacing as the much less useful "returned no choices".
+  - DeepSeek uses `https://api.deepseek.com/chat/completions`, with
+    `deepseek-v4-flash` as the default and `deepseek-v4-pro` as the stronger
+    built-in option.
 
-All three use the same prompt from `TRANSLATION_RULES.md` — only the API call
+All providers use the same prompt from `TRANSLATION_RULES.md` — only the API call
 differs — so translation style doesn't depend on which provider handled a batch.
 
 **Adding a provider is three edits and no migration**, because `provider` is a
@@ -529,8 +532,11 @@ Prisma CLI via `prisma.config.ts`'s `dotenv/config`):
 ```
 ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
-TRANSLATION_PROVIDER=claude   # "claude" | "gemini"
+TRANSLATION_PROVIDER=claude   # "claude" | "gemini" | "mistral" | "openrouter" | "deepseek"
 DEFAULT_MAX_CHARS=3000
+GEMINI_MAX_CHARS=1500         # optional provider-specific default
+GEMINI_TIMEOUT_MS=85000       # abort before Cloudflare's proxy timeout
+DEEPSEEK_API_KEY=
 DATABASE_URL="postgresql://user:password@localhost:5439/novel_translator_db?schema=public"
 
 # Compose-only (docker-compose.yml fails fast if any is missing):
@@ -782,7 +788,7 @@ feature, and a user with no key of their own rides on the server's.
 `AiProviderCredential` is one row per (user, provider), so switching provider in
 Settings doesn't discard the model and key configured for the other one.
 
-**No provider's API key is required in the environment.** All three are
+**No provider's API key is required in the environment.** All provider keys are
 `${..:-}` in `docker-compose.yml`, deliberately alike: the per-user key is the
 real one, and failing a deploy over an unused server-wide secret would be
 backwards. A provider with no key anywhere fails at translate time with

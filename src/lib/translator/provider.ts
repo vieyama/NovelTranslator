@@ -5,6 +5,7 @@ import "server-only";
 import { type AiProviderName } from "@/lib/ai-settings-schema";
 
 import { createClaudeProvider } from "./claudeClient";
+import { createDeepSeekProvider } from "./deepseekClient";
 import { createGeminiProvider } from "./geminiClient";
 import { createMistralProvider } from "./mistralClient";
 import { createOpenRouterProvider } from "./openrouterClient";
@@ -39,6 +40,8 @@ const ALIASES: Record<string, ProviderName> = {
   mistralai: "mistral",
   openrouter: "openrouter",
   "open-router": "openrouter",
+  deepseek: "deepseek",
+  "deep-seek": "deepseek",
 };
 
 const FACTORIES: Record<ProviderName, (config: ProviderConfig) => TranslationProvider> = {
@@ -46,6 +49,7 @@ const FACTORIES: Record<ProviderName, (config: ProviderConfig) => TranslationPro
   gemini: createGeminiProvider,
   mistral: createMistralProvider,
   openrouter: createOpenRouterProvider,
+  deepseek: createDeepSeekProvider,
 };
 
 /**
@@ -63,7 +67,7 @@ export function resolveProvider(config: ProviderConfig, requested?: string): Tra
 
   if (!name) {
     throw new TranslationError(
-      `Unknown TRANSLATION_PROVIDER "${raw}". Use "claude", "gemini", "mistral", or "openrouter".`,
+      `Unknown TRANSLATION_PROVIDER "${raw}". Use "claude", "gemini", "mistral", "openrouter", or "deepseek".`,
       "provider_error",
       500,
     );

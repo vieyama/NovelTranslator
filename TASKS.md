@@ -211,6 +211,11 @@ Notes:
   `gemini-pro-latest` resolves to `gemini-3.1-pro`, which has a **free-tier quota
   of zero** — it 429s immediately. Set `GEMINI_MODEL=gemini-pro-latest` if the
   key is on a paid plan.
+- Gemini calls are non-streaming and can sit silent behind Cloudflare.
+  `geminiClient.ts` aborts after `GEMINI_TIMEOUT_MS` (default 85s) so the app
+  can return JSON before the proxy shows a generic 502, and
+  `translateNextBatch.ts` supports provider-specific batch defaults such as
+  `GEMINI_MAX_CHARS` (compose default 1500).
 - Gemini failure mapping matches Claude's, so the watermark rules behave
   identically: `MAX_TOKENS` → truncated, `SAFETY`/`RECITATION`/`PROHIBITED_CONTENT`
   → refusal, blocked prompt → refusal, 429 → provider_error, 403 → missing key.
@@ -761,7 +766,7 @@ Notes:
         no factory behind it and still compile. It now derives from the schema —
         verified by deleting the factory and watching `tsc` fail with
         "Property 'mistral' is missing in type ...".
-      - **All three provider keys are now optional in `docker-compose.yml`**, on
+      - **Provider keys are now optional in `docker-compose.yml`**, on
         the user's instruction to treat Mistral like the rest. `ANTHROPIC_` and
         `GEMINI_API_KEY` were still `:?`-required from before per-user keys
         existed, so a deploy would fail over a server-wide secret for a provider
@@ -816,6 +821,20 @@ Notes:
         entry in `AI_PROVIDERS` (what the form shows as "Default (…)").
         `openrouter/free` is offered but never the default — random per-request
         routing would vary translation style between batches of one book.
+
+- [x] Add DeepSeek as another translation provider
+      - No database migration: provider names are strings and
+        `AiProviderCredential` / `BookTokenUsage` are already keyed by provider.
+      - Uses the shared OpenAI-compatible transport at
+        `https://api.deepseek.com/chat/completions`, per DeepSeek's official API
+        docs.
+      - Settings offers `deepseek-v4-flash` as the default and
+        `deepseek-v4-pro` as the stronger built-in option. Custom model input
+        still works for newer aliases.
+      - Env fallback is `DEEPSEEK_API_KEY`; optional model override is
+        `DEEPSEEK_MODEL`.
+      - Wired through `.env.local.example`, Docker Compose, and Drone secrets.
+      - Verified with `bun run lint` and `bun run build`.
 
 - [x] Re-translate with undo (user request: "model A jelek, coba model B")
       - **Provenance was the missing half.** `Paragraph` recorded *when* it was

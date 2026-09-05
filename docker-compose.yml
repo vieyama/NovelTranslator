@@ -93,6 +93,11 @@ services:
       AUTH_URL: ${AUTH_URL:-}
       TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-claude}
       DEFAULT_MAX_CHARS: ${DEFAULT_MAX_CHARS:-3000}
+      # Gemini is non-streaming in this app and Cloudflare may cut off long
+      # silent requests. Keep its default batch smaller and abort before the
+      # proxy produces a generic 502.
+      GEMINI_MAX_CHARS: ${GEMINI_MAX_CHARS:-1500}
+      GEMINI_TIMEOUT_MS: ${GEMINI_TIMEOUT_MS:-85000}
       # Every provider key is optional, and all are treated the same.
       #
       # Some were `:?` (required) back when a server-wide key was the only way
@@ -106,6 +111,8 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
       # Optional OpenRouter attribution; the site URL falls back to AUTH_URL.
       OPENROUTER_SITE_URL: ${OPENROUTER_SITE_URL:-}
       OPENROUTER_SITE_NAME: ${OPENROUTER_SITE_NAME:-}
@@ -116,6 +123,7 @@ services:
       # GEMINI_MODEL: gemini-flash-latest
       # MISTRAL_MODEL: mistral-large-latest
       # OPENROUTER_MODEL: openai/gpt-4o
+      # DEEPSEEK_MODEL: deepseek-v4-flash
     depends_on:
       db:
         condition: service_healthy

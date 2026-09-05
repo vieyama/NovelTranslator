@@ -74,11 +74,11 @@ detail.
   TXT/EPUB parsers are sync, PDF is async, and `books.ts` awaits the common
   dispatch path before creating DB rows.
 - `src/lib/translator/` — provider-agnostic interface (`types.ts`) + one client
-  per provider (`claudeClient.ts`, later `geminiClient.ts`), shared prompt
-  builder (reads `TRANSLATION_RULES.md` + glossary terms), and response parser
-  (splits the AI's output back into an array of paragraphs based on the
-  separator). For MVP, only `claudeClient.ts` is needed — keep the interface in
-  place so adding Gemini later doesn't require touching the translate route.
+  per provider (`claudeClient.ts`, `geminiClient.ts`, `mistralClient.ts`,
+  `openrouterClient.ts`, `deepseekClient.ts`), shared prompt builder (reads
+  `TRANSLATION_RULES.md` + glossary terms), and response parser (splits the AI's
+  output back into an array of paragraphs based on the separator). Mistral,
+  OpenRouter, and DeepSeek share `openAiCompatible.ts`.
 - `src/app/api/` — thin route handlers; core logic lives in `src/lib/`.
 - Reader components go in `src/components/reader/`; library-page components
   (upload form, delete button) in `src/components/library/`.
@@ -208,6 +208,11 @@ Client Component, Node just doesn't set the condition Next does.
   writes and only after response parsing succeeds. Do not collapse usage into a
   single `Book` counter: switching from Gemini model A to Gemini model B or
   Mistral model A must keep separate totals.
+- **Gemini needs shorter, timed batches behind Cloudflare.** The Gemini SDK call
+  is non-streaming here, so a long silent request can become a Cloudflare 502
+  before the app returns JSON. `geminiClient.ts` aborts at
+  `GEMINI_TIMEOUT_MS` (default 85s) and `translateNextBatch.ts` honors
+  `GEMINI_MAX_CHARS` before `DEFAULT_MAX_CHARS`.
 - **PDF parsing is heuristic.** `pdf.ts` removes repeated page noise and rebuilds
   paragraphs from extracted text, but PDFs do not store novel paragraphs as a
   reliable semantic structure. If you improve this area, test with real PDFs and

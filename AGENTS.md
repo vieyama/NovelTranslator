@@ -7,6 +7,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 # Project Notes
 
 - Read `SPEC.md` and `TASKS.md` before changing app behavior.
+- Translation providers currently include Claude, Gemini, Mistral, OpenRouter,
+  and DeepSeek.
 - Token usage from translation is stored per book, provider, and model in
   `BookTokenUsage`; do not merge model/provider totals into a single `Book`
   counter.
