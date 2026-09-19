@@ -93,6 +93,19 @@ Design notes:
 
 ## 3. Features & Flow
 
+### 3.0 Off-peak automation
+
+- Each authenticated user can select one owned book in Settings and enable an
+  unattended DeepSeek translation job. The user identity comes from the login
+  session; email and book ids are never entered in a server-side JSON file.
+- The job configuration is persisted in `OffPeakTranslationConfig`, including
+  batch size, batches per execution, delay, last run, and last error.
+- `bun run translate:offpeak` is intended for cron. It exits during DeepSeek's
+  weekday peak windows (01:00-04:00 and 06:00-10:00 UTC), processes all enabled
+  jobs off-peak, and disables a job when no untranslated paragraphs remain
+  after the book's highest translated `orderIndex`. Already-translated rows are
+  skipped and earlier untranslated gaps are deliberately left untouched.
+
 ### 3.1 Import Novel
 - User uploads a file (`.txt`, `.epub`, or `.pdf`).
 - The parser splits it into paragraphs:

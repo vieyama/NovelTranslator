@@ -11,6 +11,7 @@
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
     "user:create": "bun --conditions=react-server scripts/create-user.ts",
+    "translate:offpeak": "bun --conditions=react-server scripts/translate-offpeak.ts",
     "postinstall": "prisma generate",
     "user:bootstrap": "bun --conditions=react-server scripts/bootstrap-user.ts"
   },

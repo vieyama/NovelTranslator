@@ -355,6 +355,19 @@ export async function resolveAiConfig(userId: string): Promise<ResolvedAiConfig>
 
   const provider = parseAiProvider(user?.aiProvider ?? DEFAULT_AI_PROVIDER);
 
+  return resolveAiConfigForProvider(userId, provider);
+}
+
+/**
+ * Resolve a concrete provider for server-side automation without changing the
+ * user's active Settings choice. Used by off-peak DeepSeek jobs.
+ */
+export async function resolveAiConfigForProvider(
+  userId: string,
+  requestedProvider: AiProviderName,
+): Promise<ResolvedAiConfig> {
+  const provider = parseAiProvider(requestedProvider);
+
   const credential = await prisma.aiProviderCredential.findUnique({
     where: { userId_provider: { userId, provider } },
     select: { model: true, activeKey: { select: { id: true, encryptedApiKey: true } } },

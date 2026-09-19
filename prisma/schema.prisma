@@ -26,9 +26,10 @@ model User {
   aiProvider   String   @default("claude")
   createdAt    DateTime @default(now())
 
-  books          Book[]
-  aiCredentials  AiProviderCredential[]
-  apiKeys        ApiKey[]
+  books                    Book[]
+  aiCredentials            AiProviderCredential[]
+  apiKeys                  ApiKey[]
+  offPeakTranslationConfig OffPeakTranslationConfig?
 }
 
 // One row per (user, provider): the *settings* for that provider — which model,
@@ -70,7 +71,7 @@ model ApiKey {
   provider String
   /// User-facing name, e.g. "Akun utama" — the only way to tell two masked
   /// keys apart in the list.
-  label String
+  label    String
 
   // AES-256-GCM under the user's DEK, AAD = "<userId>:<provider>" — deliberately
   // the *same* AAD as before this table existed, so the migration could move
@@ -105,12 +106,36 @@ model Book {
   userId String?
   user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  paragraphs    Paragraph[]
-  progress      ReadingProgress?
-  glossaryTerms GlossaryTerm[]
-  tokenUsage    BookTokenUsage[]
+  paragraphs                Paragraph[]
+  progress                  ReadingProgress?
+  glossaryTerms             GlossaryTerm[]
+  tokenUsage                BookTokenUsage[]
+  offPeakTranslationConfigs OffPeakTranslationConfig[]
 
   @@index([userId])
+}
+
+// One unattended DeepSeek job per user. The selected book relation also proves
+// ownership at save time; the worker still scopes every translation by userId.
+model OffPeakTranslationConfig {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bookId String
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  enabled               Boolean   @default(false)
+  maxChars              Int       @default(3000)
+  maxBatches            Int       @default(50)
+  delayMsBetweenBatches Int       @default(1000)
+  lastRunAt             DateTime?
+  lastError             String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([enabled])
+  @@index([bookId])
 }
 
 // Per-book token totals, separated by provider and model. A single book may be

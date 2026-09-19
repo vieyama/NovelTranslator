@@ -940,6 +940,13 @@ Notes:
         delete promotes a replacement, another user's key id is refused for both
         activate and delete, and env fallback still applies with no saved keys.
 
+- [x] Store per-user DeepSeek off-peak automation in the database
+      - Logged-in users select an owned book from Settings; the API derives the
+        user from the session, so no email or book id config file is needed.
+      - The cron-friendly runner discovers all enabled jobs, skips peak UTC
+        windows, resumes after the highest translated index, skips translated
+        rows, records run errors, and disables completed forward-only jobs.
+
 ## Non-Negotiables (recheck before marking any phase done)
 
 - [ ] `orderIndex` is never inferred from text matching, only from stored order
