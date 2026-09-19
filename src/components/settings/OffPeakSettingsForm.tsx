@@ -72,7 +72,7 @@ export function OffPeakSettingsForm({ initial }: { initial: OffPeakSettingsView 
         >
           <span
             aria-hidden="true"
-            className={`absolute top-1 size-5 rounded-full bg-white shadow-sm transition-transform ${
+            className={`absolute left-0 top-1 size-5 rounded-full bg-white shadow-sm transition-transform ${
               enabled ? "translate-x-6" : "translate-x-1"
             }`}
           />
