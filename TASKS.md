@@ -947,6 +947,9 @@ Notes:
       - The cron-friendly runner discovers all enabled jobs, skips peak UTC
         windows, resumes after the highest translated index, skips translated
         rows, records run errors, and disables completed forward-only jobs.
+      - Docker Compose includes a persistent `offpeak-worker`; the production
+        app image does not contain `scripts/`, so scheduling only the app
+        container could never execute the runner.
 
 ## Non-Negotiables (recheck before marking any phase done)
 

@@ -105,6 +105,10 @@ Design notes:
   jobs off-peak, and disables a job when no untranslated paragraphs remain
   after the book's highest translated `orderIndex`. Already-translated rows are
   skipped and earlier untranslated gaps are deliberately left untouched.
+- Docker Compose runs that same one-shot command in the `offpeak-worker`
+  service, immediately on startup and then every `OFFPEAK_INTERVAL_SECONDS`
+  (15 minutes by default). Runs are sequential, so a slow provider request
+  cannot overlap another scheduler invocation.
 
 ### 3.1 Import Novel
 - User uploads a file (`.txt`, `.epub`, or `.pdf`).

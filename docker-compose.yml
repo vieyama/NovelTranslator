@@ -134,5 +134,31 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  offpeak-worker:
+    container_name: ${COMPOSE_PROJECT_NAME:-novel-translator}_offpeak_worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # The standalone app image intentionally excludes scripts and source
+      # files. The worker needs both to execute the TypeScript runner.
+      target: builder
+    command: ["sh", "scripts/run-offpeak-worker.sh"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:?POSTGRES_DB is required}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
+      DEEPSEEK_MAX_CHARS: ${DEEPSEEK_MAX_CHARS:-1500}
+      DEEPSEEK_TIMEOUT_MS: ${DEEPSEEK_TIMEOUT_MS:-240000}
+      TRANSLATION_TIMEOUT_MS: ${TRANSLATION_TIMEOUT_MS:-240000}
+      OFFPEAK_INTERVAL_SECONDS: ${OFFPEAK_INTERVAL_SECONDS:-900}
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   postgres_data:
