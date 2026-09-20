@@ -1,4 +1,4 @@
-import { PDFParse } from "pdf-parse";
+import { extractText, getDocumentProxy } from "unpdf";
 
 import type { ParsedParagraph, ParserInput } from "./types";
 
@@ -19,6 +19,7 @@ export class PdfParseError extends Error {
 
 const MIN_PARAGRAPH_LENGTH = 2;
 const PAGE_NOISE_EDGE_LINES = 3;
+const MAX_PDF_PAGES = 3000;
 
 export async function parse(fileBuffer: ParserInput): Promise<ParsedParagraph[]> {
   const bytes = fileBuffer instanceof Uint8Array ? fileBuffer : new Uint8Array(fileBuffer);
@@ -27,11 +28,17 @@ export async function parse(fileBuffer: ParserInput): Promise<ParsedParagraph[]>
     throw new PdfParseError("This file does not look like a PDF.");
   }
 
-  const parser = new PDFParse({ data: bytes });
+  let pdf: Awaited<ReturnType<typeof getDocumentProxy>> | null = null;
 
   try {
-    const result = await parser.getText();
-    const pages = result.pages.map((page) => normalizePageText(page.text));
+    pdf = await getDocumentProxy(bytes, { maxImageSize: 16_777_216 });
+
+    if (pdf.numPages > MAX_PDF_PAGES) {
+      throw new PdfParseError(`PDF has ${pdf.numPages} pages; the limit is ${MAX_PDF_PAGES}.`);
+    }
+
+    const result = await extractText(pdf, { mergePages: false });
+    const pages = result.text.map(normalizePageText);
     const withoutRepeatingNoise = removeRepeatingPageLines(pages);
     const text = withoutRepeatingNoise.join("\n\n");
     const paragraphs = splitIntoParagraphs(text);
@@ -46,7 +53,7 @@ export async function parse(fileBuffer: ParserInput): Promise<ParsedParagraph[]>
 
     throw new PdfParseError("This file is not a readable PDF.");
   } finally {
-    await parser.destroy();
+    await pdf?.loadingTask.destroy();
   }
 }
 

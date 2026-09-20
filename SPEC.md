@@ -118,7 +118,7 @@ Design notes:
     titles are text the reader wants, a small widening of the original "`<p>`
     tags only" rule. Documents using no block tags fall back to splitting on
     `</div>`/`<br>`. Entities are decoded and whitespace collapsed.
-  - **pdf** (built): extract text with `pdf-parse` / PDF.js, remove repeated
+  - **pdf** (built): extract text with `unpdf` / PDF.js, remove repeated
     page-edge headers/footers and page markers, repair common hyphenated line
     breaks, then heuristically reconstruct paragraphs from blank lines,
     indentation, standalone chapter headings, and sentence-ended lines when the

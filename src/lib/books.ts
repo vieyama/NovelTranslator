@@ -287,9 +287,8 @@ async function parseByFormat(format: SupportedFormat, bytes: Uint8Array): Promis
       }
     case "pdf":
       try {
-        // `pdf-parse` touches browser-ish globals while the module is
-        // evaluated. Load it only for real PDF uploads so ordinary book listing
-        // never imports that dependency on the server render path.
+        // Load PDF extraction only for real PDF uploads so ordinary book
+        // listing never imports that dependency on the server render path.
         const { parse: parsePdf } = await import("@/lib/parser/pdf");
         return await parsePdf(bytes);
       } catch (error) {

@@ -283,7 +283,7 @@ Notes:
         not set. Seed command is now
         `tsx --conditions=react-server prisma/seed.ts`; documented in CLAUDE.md.
 - [x] PDF upload + parser (`src/lib/parser/pdf.ts`)
-      - Deps: `pdf-parse` (PDF.js-backed text extraction).
+      - Deps: `unpdf` (PDF.js-backed text extraction).
       - Upload now accepts `.pdf` in the API and `UploadBookForm`.
       - Parser removes repeated page headers/footers and bare page numbers, then
         reconstructs paragraphs from blank lines, indentation, standalone
@@ -297,9 +297,10 @@ Notes:
       - `parseByFormat` is async now because PDF extraction is async; TXT/EPUB
         behavior remains unchanged.
       - Runtime fix: `books.ts` lazy-loads `src/lib/parser/pdf.ts` only for
-        actual PDF uploads. Importing `pdf-parse` on the normal `/books` render
-        path made the standalone server evaluate PDF.js/canvas code and crash
-        with `ReferenceError: DOMMatrix is not defined`.
+        actual PDF uploads. Importing the PDF extraction dependency on the
+        normal `/books` render path made the standalone server evaluate
+        PDF.js/canvas code and crash with `ReferenceError: DOMMatrix is not
+        defined`.
       - Smoke-tested with a generated local PDF: chapter heading and two prose
         paragraphs become three sequential parser rows.
       - Verified with `bun run lint` and `bun run build`.

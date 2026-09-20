@@ -227,7 +227,7 @@ Client Component, Node just doesn't set the condition Next does.
   reliable semantic structure. If you improve this area, test with real PDFs and
   prefer adding preview/cleanup controls over pretending extraction can be
   perfect for every file.
-- **Keep the PDF parser lazy-loaded.** `pdf-parse` / PDF.js can evaluate
+- **Keep the PDF parser lazy-loaded.** PDF.js-backed extraction can evaluate
   canvas/browser globals such as `DOMMatrix` in the production server bundle.
   `books.ts` imports `src/lib/parser/pdf.ts` dynamically only inside the `.pdf`
   branch; do not move that back to a top-level import or `/books` can crash
